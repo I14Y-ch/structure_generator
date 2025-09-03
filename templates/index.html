@@ -1,0 +1,2329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHACL Editor for I14Y - Web Version</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://unpkg.com/vis@4.21.0/dist/vis.min.css" rel="stylesheet">
+    <link href="/static/css/styles.css" rel="stylesheet">
+    
+    <!-- Custom CSS for vis.js tooltip word wrapping -->
+    <style>
+        /* Force word wrapping in vis.js tooltips */
+        .vis-tooltip {
+            max-width: 300px !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            hyphens: auto !important;
+        }
+        
+        .vis-tooltip div {
+            max-width: 300px !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            hyphens: auto !important;
+        }
+        
+        .vis-tooltip * {
+            max-width: 300px !important;
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Full-width Header -->
+    <div class="container-fluid bg-light border-bottom">
+        <div class="row">
+            <div class="col-12 py-3 text-center">
+                <h1 class="mb-0">I14Y Data Structure Editor</h1>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Left Sidebar -->
+            <div class="col-md-2 sidebar">
+                
+                <!-- Add Elements -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">Add Elements</h6>
+                    </div>
+                    <div class="card-body">
+                        <button class="btn btn-class btn-sm w-100 mb-2" onclick="showAddClassModal()">Class</button>
+                        <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showI14YSearchModal()">I14Y Concept</button>
+                        <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showAddConceptModal()">Own Concept</button>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">Actions</h6>
+                    </div>
+                    <div class="card-body">
+                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="removeSelected()">Remove</button>
+                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="toggleConnectionMode()">Connect</button>
+                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="detachSelected()" id="detach-btn" style="display: none;">Detach</button>
+                        <div id="connection-status" class="connection-mode" style="display: none;">
+                            <small>Click two nodes to connect</small>
+                        </div>
+                        <div id="edge-status" style="display: none;">
+                            <small>Connection selected - click Detach to remove</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export -->
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h6 class="mb-0">Import & Export</h6>
+                    </div>
+                    <div class="card-body">
+                        <!-- New Structure Button -->
+                        <div class="mb-3">
+                            <button class="btn btn-new-structure btn-sm w-100" onclick="createNewStructure()">New Structure</button>
+                            <div class="small text-muted mt-1">Create a new empty structure</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong class="small">TTL (SHACL):</strong>
+                            <div class="d-flex gap-2 mt-1">
+                                <input type="file" id="ttl-file" accept=".ttl" style="display: none;" onchange="importTTL(this)">
+                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="document.getElementById('ttl-file').click()">Import</button>
+                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="exportTTL()">Export</button>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <strong class="small">CSV:</strong>
+                            <div class="d-flex gap-2 mt-1">
+                                <input type="file" id="csv-file" accept=".csv" style="display: none;" onchange="showCSVImportModal(this)">
+                                <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('csv-file').click()">Import</button>
+                            </div>
+                        </div>
+                        <div>
+                            <strong class="small">Project:</strong>
+                            <div class="d-flex gap-2 mt-1">
+                                <input type="file" id="project-file" accept=".json" style="display: none;" onchange="loadProject(this)">
+                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="document.getElementById('project-file').click()">Load</button>
+                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="saveProject()">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Graph Area -->
+            <div class="col-md-7">
+                <div class="main-content">
+                    <div id="graph-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Sidebar - Node Information -->
+            <div class="col-md-3 right-sidebar">
+                <div id="selected-node-section" style="display: none;">
+                    <h5 class="mb-3">Information</h5>
+                    
+                    <!-- Node Information -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div id="selected-node-info"></div>
+                        </div>
+                    </div>
+
+                    <!-- SHACL Constraints -->
+                    <div class="card mb-3" id="constraints-section">
+                        <div class="card-header">
+                            <h6 class="mb-0">SHACL Constraints</h6>
+                            <div id="i14y-constraints-info" class="alert alert-info alert-sm mt-2" style="display: none; padding: 0.5rem; margin-bottom: 0;">
+                                <small><i class="bi bi-info-circle"></i> Constraints automatically applied from I14Y</small>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="constraint-group mb-3" id="length-group">
+                                <h6 class="small">Length</h6>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <label class="form-label small">Min Length:</label>
+                                        <input type="number" class="form-control form-control-sm" id="min-length">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small">Max Length:</label>
+                                        <input type="number" class="form-control form-control-sm" id="max-length">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="constraint-group mb-3" id="pattern-group">
+                                <h6 class="small">Pattern</h6>
+                                <input type="text" class="form-control form-control-sm" id="pattern" placeholder="Regex pattern">
+                            </div>
+
+                            <div class="constraint-group mb-3" id="enumeration-group">
+                                <h6 class="small">Enumeration</h6>
+                                <input type="text" class="form-control form-control-sm" id="in-values" placeholder="Comma-separated values">
+                            </div>
+
+                            <div class="constraint-group mb-3" id="references-group">
+                                <h6 class="small">References</h6>
+                                <div class="mb-2" id="datatype-field">
+                                    <label class="form-label small">Datatype:</label>
+                                    <input type="text" class="form-control form-control-sm" id="datatype" placeholder="e.g., xsd:string, xsd:decimal" readonly>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Node Reference:</label>
+                                    <input type="text" class="form-control form-control-sm" id="node-reference">
+                                </div>
+                                <div>
+                                    <label class="form-label small">Range:</label>
+                                    <input type="text" class="form-control form-control-sm" id="range">
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="applyConstraints()">Apply</button>
+                                <button class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearConstraints()">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Placeholder when no node selected -->
+                <div id="no-node-selected" class="text-center text-muted">
+                    <p>Select a node to view details and configure constraints</p>
+                </div>
+                
+                <!-- Edge Information (shown when an edge is selected) -->
+                <div id="selected-edge-section" style="display: none;">
+                    <h5 class="mb-3">Connection Information</h5>
+                    
+                    <!-- Edge Information -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div id="selected-edge-info"></div>
+                        </div>
+                    </div>
+
+                    <!-- Cardinality Configuration -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0">Cardinality</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="edge-cardinality" class="form-label small">Cardinality:</label>
+                                <select class="form-select form-select-sm" id="edge-cardinality">
+                                    <option value="0..1">0..1 (Optional, at most one)</option>
+                                    <option value="1..1">1..1 (Exactly one)</option>
+                                    <option value="0..n">0..n (Zero or more)</option>
+                                    <option value="1..n">1..n (One or more)</option>
+                                    <option value="0..0">0..0 (Forbidden)</option>
+                                    <option value="2..5">2..5 (Custom range)</option>
+                                </select>
+                            </div>
+                            <div class="mb-3" id="custom-cardinality-section" style="display: none;">
+                                <label for="custom-cardinality" class="form-label small">Custom Cardinality:</label>
+                                <input type="text" class="form-control form-control-sm" id="custom-cardinality" placeholder="e.g., 2..10, 5..*, 3..3">
+                                <div class="form-text">Format: min..max (use * for unlimited)</div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="applyEdgeCardinality()">Apply</button>
+                                <button class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearEdgeSelection()">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Add Concept Modal -->
+    <div class="modal fade" id="addConceptModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Custom Concept</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="concept-title" class="form-label">Title:</label>
+                        <input type="text" class="form-control" id="concept-title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="concept-description" class="form-label">Description:</label>
+                        <textarea class="form-control" id="concept-description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addConcept()">Add Concept</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Class Modal -->
+    <div class="modal fade" id="addClassModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Class</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="class-title" class="form-label">Title:</label>
+                        <input type="text" class="form-control" id="class-title" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="class-description" class="form-label">Description:</label>
+                        <textarea class="form-control" id="class-description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addClass()">Add Class</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- I14Y Search Modal -->
+    <div class="modal fade" id="i14ySearchModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Search I14Y Concepts</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="i14y-search-query" placeholder="Search concepts...">
+                            <button class="btn btn-outline-secondary" onclick="searchI14Y()">Search</button>
+                        </div>
+                    </div>
+                    <div id="i14y-results" style="max-height: 400px; overflow-y: auto;">
+                        <!-- Search results will be populated here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- I14Y Dataset Search Modal -->
+    <div class="modal fade" id="i14yDatasetSearchModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Search I14Y Datasets</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="i14y-dataset-search-query" placeholder="Search datasets...">
+                            <button class="btn btn-outline-secondary" onclick="searchI14YDatasets()">Search</button>
+                        </div>
+                    </div>
+                    <div id="i14y-dataset-results" style="max-height: 400px; overflow-y: auto;">
+                        <!-- Dataset search results will be populated here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- CSV Import Modal -->
+    <div class="modal fade" id="csvImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Import CSV</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="csv-dataset-name" class="form-label">Dataset Name:</label>
+                        <input type="text" class="form-control" id="csv-dataset-name" value="Imported Dataset">
+                        <div class="form-text">This will be the title of your dataset</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="csv-lang" class="form-label">Default Language:</label>
+                        <select class="form-select" id="csv-lang">
+                            <option value="de">German (de)</option>
+                            <option value="fr">French (fr)</option>
+                            <option value="it">Italian (it)</option>
+                            <option value="en">English (en)</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>
+                            <strong>Note:</strong> The CSV file will be analyzed to automatically detect column data types (text, numbers, dates, etc.).
+                            Columns with "year" or similar keywords will be interpreted as dates.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="importCSV()">Import</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Vis.js for graph visualization -->
+    <script src="https://unpkg.com/vis@4.21.0/dist/vis.min.js"></script>
+
+    <script>
+        let network;
+        let nodes, edges;
+        let selectedNodeId = null;
+        let selectedEdgeId = null;
+        let connectionMode = false;
+        let pendingConnection = null;
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded');
+            
+            // Check if vis is available
+            if (typeof vis === 'undefined') {
+                console.error('vis library is not loaded!');
+                document.getElementById('graph-container').innerHTML = '<p class="text-danger">Error: Vis.js library failed to load</p>';
+                return;
+            } else {
+                console.log('vis library is available:', vis);
+            }
+            
+            initializeGraph();
+            loadDataset();
+            loadGraph();
+            clearNodeSelection(); // Initialize right sidebar
+        });
+
+        function clearNodeSelection() {
+            selectedNodeId = null;
+            selectedEdgeId = null;
+            document.getElementById('selected-node-section').style.display = 'none';
+            document.getElementById('selected-edge-section').style.display = 'none';
+            document.getElementById('no-node-selected').style.display = 'block';
+            document.getElementById('detach-btn').style.display = 'none';
+            document.getElementById('edge-status').style.display = 'none';
+        }
+
+        function initializeGraph() {
+            const container = document.getElementById('graph-container');
+            
+            console.log('Initializing graph with container:', container);
+            
+            // Create DataSets with new vis-network API
+            nodes = new vis.DataSet([]);
+            edges = new vis.DataSet([]);
+            
+            console.log('DataSets created');
+
+            // Simple network options for debugging
+            const options = {
+                nodes: {
+                    shape: 'box',
+                    margin: 10,
+                    font: { 
+                        size: 14,
+                        // No multi setting to avoid rendering HTML tags
+                    },
+                    borderWidth: 2,
+                    heightConstraint: {
+                        minimum: 30
+                    },
+                    widthConstraint: {
+                        minimum: 100,
+                        maximum: 250
+                    },
+                    // Configure tooltips for nodes
+                    tooltipDelay: 200,
+                },
+                edges: {
+                    width: 2,
+                    color: { color: '#848484' },
+                    selectionWidth: 4,
+                    hoverWidth: 3,
+                    font: { 
+                        size: 12, 
+                        color: '#666666',
+                        strokeWidth: 2,
+                        strokeColor: '#ffffff'
+                    },
+                    labelHighlightBold: false
+                },
+                interaction: {
+                    hover: true,
+                    tooltipDelay: 200
+                },
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: 'UD', // Up-Down
+                        sortMethod: 'directed',
+                        levelSeparation: 150,
+                        nodeSpacing: 200,
+                        treeSpacing: 300,
+                        blockShifting: false,
+                        edgeMinimization: false,
+                        parentCentralization: false,
+                        shakeTowards: 'leaves'
+                    }
+                },
+                physics: {
+                    enabled: false, // Disable physics for stable layout
+                    hierarchicalRepulsion: {
+                        nodeDistance: 180,
+                        centralGravity: 0.0,
+                        springLength: 150,
+                        springConstant: 0.01,
+                        damping: 0.09
+                    }
+                },
+                interaction: {
+                    selectConnectedEdges: false,
+                    dragNodes: true,
+                    dragView: true,
+                    zoomView: true,
+                    hover: true
+                }
+            };
+
+            console.log('Creating network with options:', options);
+            
+            // Create network with new vis-network API
+            try {
+                network = new vis.Network(container, { nodes: nodes, edges: edges }, options);
+                console.log('Network created successfully');
+                
+                // Handle stabilization for new nodes
+                network.on('stabilizationProgress', function(params) {
+                    // Don't show progress since we want minimal physics
+                });
+                
+                network.on('stabilizationIterationsDone', function() {
+                    // Disable physics after stabilization
+                    network.setOptions({ physics: { enabled: false } });
+                });
+                
+                // Handle node and edge selection
+                network.on('click', function(params) {
+                    console.log('Network clicked:', params);
+                    if (params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        
+                        if (connectionMode) {
+                            handleConnectionClick(nodeId);
+                        } else {
+                            selectNode(nodeId);
+                        }
+                    } else if (params.edges.length > 0) {
+                        // Edge was clicked
+                        const edgeId = params.edges[0];
+                        selectEdge(edgeId);
+                    } else {
+                        // Clicked on empty space - clear selection
+                        if (!connectionMode) {
+                            clearNodeSelection();
+                        }
+                    }
+                });
+                
+                console.log('Event handlers attached');
+            } catch (error) {
+                console.error('Error creating network:', error);
+            }
+        }
+
+        function loadDataset() {
+            fetch('/api/dataset')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('dataset-title').value = data.title;
+                    document.getElementById('dataset-description').value = data.description;
+                });
+        }
+
+        function updateDataset() {
+            const title = document.getElementById('dataset-title').value;
+            const description = document.getElementById('dataset-description').value;
+
+            fetch('/api/dataset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title, description: description })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    loadGraph();
+                }
+            });
+        }
+
+        function updateDatasetInfo() {
+            const title = document.getElementById('edit-dataset-title').value;
+            const description = document.getElementById('edit-dataset-description').value;
+
+            fetch('/api/dataset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title, description: description })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Dataset updated successfully!');
+                    loadGraph();
+                    // Reload the node details to show updated information
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                } else {
+                    alert('Error updating dataset');
+                }
+            });
+        }
+
+        function updateNodeInfo() {
+            if (!selectedNodeId) {
+                alert('No node selected');
+                return;
+            }
+
+            const title = document.getElementById('edit-node-title').value;
+            const description = document.getElementById('edit-node-description').value;
+
+            if (!title.trim()) {
+                alert('Title is required');
+                return;
+            }
+
+            fetch(`/api/nodes/${selectedNodeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    title: title.trim(), 
+                    description: description.trim() 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Node updated successfully!');
+                    loadGraph();
+                    // Reload the node details to show updated information
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                } else {
+                    alert('Error updating node: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error updating node:', error);
+                alert('Error updating node: ' + error.message);
+            });
+        }
+
+        // Function to completely reset the network visualization
+        function forceNetworkReset() {
+            console.log('Forcing complete network reset...');
+            
+            // Clear all data
+            nodes.clear();
+            edges.clear();
+            
+            // Destroy and recreate network
+            if (network) {
+                try {
+                    // Get container
+                    const container = document.getElementById('graph-container');
+                    
+                    // Destroy network
+                    network.destroy();
+                    
+                    // Recreate network with empty data
+                    const options = {
+                        nodes: {
+                            shape: 'box',
+                            margin: 10,
+                            font: { 
+                                size: 14
+                                // No multi setting to avoid rendering HTML tags
+                            },
+                            borderWidth: 2,
+                            heightConstraint: {
+                                minimum: 30
+                            },
+                            widthConstraint: {
+                                minimum: 100
+                            }
+                        },
+                        edges: {
+                            width: 2,
+                            color: { color: '#848484' },
+                            selectionWidth: 4,
+                            hoverWidth: 3,
+                            font: { 
+                                size: 12, 
+                                color: '#666666',
+                                strokeWidth: 2,
+                                strokeColor: '#ffffff'
+                            },
+                            labelHighlightBold: false
+                        },
+                        layout: {
+                            hierarchical: {
+                                enabled: true,
+                                direction: 'UD', // Up-Down
+                                sortMethod: 'directed',
+                                levelSeparation: 150,
+                                nodeSpacing: 200,
+                                treeSpacing: 300
+                            }
+                        }
+                    };
+                    
+                    network = new vis.Network(
+                        container, 
+                        { nodes: nodes, edges: edges },
+                        options
+                    );
+                    
+                    // Rebind event handlers
+                    network.on('click', function(params) {
+                        console.log('Network clicked:', params);
+                        if (params.nodes.length > 0) {
+                            const nodeId = params.nodes[0];
+                            
+                            if (connectionMode) {
+                                handleConnectionClick(nodeId);
+                            } else {
+                                selectNode(nodeId);
+                            }
+                        } else if (params.edges.length > 0) {
+                            // Edge was clicked
+                            const edgeId = params.edges[0];
+                            selectEdge(edgeId);
+                        } else {
+                            // Clicked on empty space - clear selection
+                            if (!connectionMode) {
+                                clearNodeSelection();
+                            }
+                        }
+                    });
+                    
+                    console.log('Network reset complete');
+                } catch (error) {
+                    console.error('Error resetting network:', error);
+                    // Fallback: initialize graph again
+                    initializeGraph();
+                }
+            } else {
+                // Just initialize the graph again
+                initializeGraph();
+            }
+        }
+
+        // Function to format node tooltip with all relevant information
+        function formatNodeTooltip(node) {
+            if (!node) return '';
+            
+            let tooltip = '<div style="max-width: 300px !important; width: 300px !important; padding: 8px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; hyphens: auto;">';
+            
+            // Title
+            const title = typeof node.title === 'object' ? getMultilingualText(node.title) : node.title;
+            tooltip += `<div style="font-weight: bold; font-size: 14px; margin-bottom: 5px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;">${escapeHtml(title)}</div>`;
+            
+            // Type badge with color matching the node color
+            let typeBgColor = '#99ccff'; // Default blue for concepts
+            if (node.type === 'dataset') {
+                typeBgColor = '#ff9999'; // Light red for dataset
+            } else if (node.type === 'class') {
+                typeBgColor = '#99ff99'; // Light green for classes
+            }
+            
+            // Get the node type
+            let nodeTypeDisplay = node.type.charAt(0).toUpperCase() + node.type.slice(1);
+            tooltip += `<div style="display: inline-block; background-color: ${typeBgColor}; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-bottom: 8px; word-wrap: break-word !important;">${escapeHtml(nodeTypeDisplay)}</div>`;
+            
+            // Publisher if available
+            if (node.publisher) {
+                const publisher = typeof node.publisher === 'object' ? getMultilingualText(node.publisher) : node.publisher;
+                tooltip += `<div style="margin-bottom: 5px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><strong>Publisher:</strong> ${escapeHtml(publisher)}</div>`;
+            }
+            
+            // ID if available (for debugging purposes)
+            if (node.id) {
+                tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">ID: ${escapeHtml(node.id)}</small></div>`;
+            }
+            
+            // I14Y ID if available
+            if (node.i14y_id) {
+                if (node.type === 'concept') {
+                    tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Concept ID: ${escapeHtml(node.i14y_id)}</small></div>`;
+                } else if (node.type === 'dataset') {
+                    tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Dataset ID: ${escapeHtml(node.i14y_id)}</small></div>`;
+                }
+            }
+            
+            // Description if available - limit to 50 words and add word wrapping
+            if (node.description) {
+                let description = typeof node.description === 'object' ? getMultilingualText(node.description) : node.description;
+                
+                // Limit description to 50 words
+                const words = description.split(/\s+/);
+                if (words.length > 50) {
+                    description = words.slice(0, 50).join(' ') + '...';
+                }
+                
+                tooltip += `<div style="border-top: 1px solid #ddd; padding-top: 5px; margin-top: 5px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; line-height: 1.4; hyphens: auto;">${escapeHtml(description)}</div>`;
+            }
+            
+            tooltip += '</div>';
+            return tooltip;
+        }
+        
+        // Helper function to escape HTML to prevent XSS
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function loadGraph() {
+            console.log('Loading graph data...');
+            fetch('/api/graph')
+                .then(response => {
+                    console.log('Graph API response status:', response.status);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Graph data received:', data);
+                    
+                    if (!data.nodes || !Array.isArray(data.nodes)) {
+                        console.error('Invalid graph data format:', data);
+                        return;
+                    }
+                    
+                    // Update nodes
+                    console.log('Clearing existing nodes...');
+                    nodes.clear();
+                    
+                    console.log('Adding nodes:', data.nodes.length);
+                    data.nodes.forEach((node, index) => {
+                        // Assign hierarchical levels based on node type
+                        let level = 2; // Default level for concepts
+                        if (node.type === 'dataset') {
+                            level = 0; // Dataset at top
+                        } else if (node.type === 'class') {
+                            level = 1; // Classes in middle
+                        }
+                        
+                        const nodeData = {
+                            id: node.id,
+                            level: level, // Add hierarchical level
+                            label: node.label, // This includes title, type, and publisher
+                            title: formatNodeTooltip(node), // Format detailed tooltip with description
+                            type: node.type,  // Store the node type for edge styling
+                            color: {
+                                background: node.selected ? '#ffff00' : node.color,
+                                border: node.selected ? '#333' : '#666'
+                            },
+                            font: { 
+                                color: node.selected ? '#000' : '#333',
+                                face: 'arial'
+                            }
+                        };
+
+                        console.log(`Adding node ${index}:`, nodeData);
+                        nodes.add(nodeData);
+                    });
+
+                    // Update edges
+                    console.log('Clearing existing edges...');
+                    edges.clear();
+                    
+                    // Check if edges exist and are an array
+                    if (data.edges && Array.isArray(data.edges)) {
+                        console.log('Adding edges:', data.edges.length);
+                        
+                        const edgeDataArray = [];
+                        data.edges.forEach((edge, index) => {
+                            // Get nodes by ID
+                            const fromNode = nodes.get(edge.from);
+                            const toNode = nodes.get(edge.to);
+                            
+                            const edgeData = {
+                                id: edge.id,
+                                from: edge.from,
+                                to: edge.to,
+                                label: '', // Removed cardinality labels
+                                arrows: 'to'
+                            };
+                            
+                            // Style class-to-class connections differently
+                            if (fromNode && toNode && fromNode.type === 'class' && toNode.type === 'class') {
+                                edgeData.color = { color: '#ff6b35' }; // Orange for class-to-class
+                                edgeData.width = 3;
+                                edgeData.dashes = [5, 5]; // Dashed line
+                                edgeData.font = { color: '#ff6b35', size: 11 };
+                            } else {
+                                edgeData.color = { color: '#848484' }; // Default gray
+                                edgeData.width = 2;
+                            }
+                            
+                            console.log(`Adding edge ${index}:`, edgeData);
+                            edgeDataArray.push(edgeData);
+                        });
+                        
+                        // Add all edges at once for better performance and to avoid partial updates
+                        edges.add(edgeDataArray);
+                    } else {
+                        console.log('No edges to add or invalid edges data');
+                    }
+                    
+                    console.log('Final nodes count:', nodes.length);
+                    console.log('Final edges count:', edges.length);
+                    
+                    // Force network redraw
+                    if (network) {
+                        console.log('Redrawing network...');
+                        network.redraw();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading graph:', error);
+                });
+        }
+
+        function selectNode(nodeId) {
+            selectedNodeId = nodeId;
+            selectedEdgeId = null;  // Clear edge selection
+            
+            // Hide edge-related UI
+            document.getElementById('detach-btn').style.display = 'none';
+            document.getElementById('edge-status').style.display = 'none';
+            
+            // Update selection on server
+            fetch(`/api/nodes/${nodeId}/select`, {
+                method: 'POST'
+            })
+            .then(() => {
+                loadGraph();
+                loadNodeDetails(nodeId);
+            });
+        }
+
+        function selectEdge(edgeId) {
+            selectedNodeId = null;  // Clear node selection
+            selectedEdgeId = edgeId;
+            
+            // Hide node-related UI
+            document.getElementById('selected-node-section').style.display = 'none';
+            document.getElementById('no-node-selected').style.display = 'none';
+            
+            // Show edge-related UI
+            document.getElementById('selected-edge-section').style.display = 'block';
+            document.getElementById('detach-btn').style.display = 'block';
+            document.getElementById('edge-status').style.display = 'block';
+            
+            // Highlight the selected edge
+            network.selectEdges([edgeId]);
+            
+            // Load edge details
+            loadEdgeDetails(edgeId);
+            
+            console.log('Edge selected:', edgeId);
+        }
+
+        function loadNodeDetails(nodeId) {
+            fetch(`/api/nodes/${nodeId}`)
+                .then(response => response.json())
+                .then(node => {
+                    // Show right sidebar and hide placeholder
+                    document.getElementById('selected-node-section').style.display = 'block';
+                    document.getElementById('no-node-selected').style.display = 'none';
+
+                    // Truncate description to first 50 words
+                    let description = node.description || 'None';
+                    const words = description.split(/\s+/);
+                    if (words.length > 50) {
+                        description = words.slice(0, 50).join(' ') + '...';
+                    }
+
+                    // Prepare I14Y link if available
+                    let i14yLink = '';
+                    if (node.i14y_id) {
+                        if (node.type === 'concept') {
+                            i14yLink = `<strong>I14Y:</strong> <a href="https://www.i14y.admin.ch/catalog/concepts/${node.i14y_id}/description" target="_blank" rel="noopener">View full concept description</a><br>`;
+                        } else if (node.type === 'dataset') {
+                            i14yLink = `<strong>I14Y:</strong> <a href="https://www.i14y.admin.ch/catalog/datasets/${node.i14y_id}/description" target="_blank" rel="noopener">View full dataset description</a><br>`;
+                        }
+                    }
+
+                    // Publisher info if available (from i14y_data)
+                    let publisher = '';
+                    if (node.i14y_data && node.i14y_data.publisherName) {
+                        const pub = node.i14y_data.publisherName;
+                        if (typeof pub === 'object') {
+                            publisher = pub.de || pub.en || pub.fr || pub.it || pub.rm || '';
+                        } else {
+                            publisher = pub;
+                        }
+                        if (publisher) {
+                            publisher = `<strong>Publisher:</strong> ${publisher}<br>`;
+                        } else {
+                            publisher = '';
+                        }
+                    }
+
+                    // Update node information - check if it's a dataset node
+                    let mainInfo;
+                    if (node.type === 'dataset') {
+                        // For dataset nodes, show editable fields
+                        let i14yDatasetInfo = '';
+                        if (node.i14y_dataset_uri) {
+                            i14yDatasetInfo = `
+                            <div class="mb-3 mt-2">
+                                <p class="small text-success">✓ Linked to I14Y Dataset</p>
+                                <a href="${node.i14y_dataset_uri}" target="_blank" class="btn btn-sm btn-outline-success w-100 mb-2">
+                                    View on I14Y
+                                </a>
+                                <button class="btn btn-outline-danger btn-sm w-100" onclick="disconnectI14YDataset()">Disconnect Dataset</button>
+                            </div>
+                            `;
+                        }
+                        
+                        // Check if dataset is linked to I14Y to determine if fields should be editable
+                        const isLinked = !!node.i14y_dataset_uri;
+                        
+                        mainInfo = `
+                            <strong>Type:</strong> ${node.type}<br>
+                            <div class="mb-3 mt-3">
+                                <label for="edit-dataset-title" class="form-label small">Title:</label>
+                                <input type="text" class="form-control form-control-sm" id="edit-dataset-title" value="${node.title}" ${isLinked ? 'readonly' : ''}>
+                                ${isLinked ? '<small class="text-muted">Title is managed by I14Y</small>' : ''}
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit-dataset-description" class="form-label small">Description:</label>
+                                <textarea class="form-control form-control-sm" id="edit-dataset-description" rows="3" ${isLinked ? 'readonly' : ''}>${node.description}</textarea>
+                                ${isLinked ? '<small class="text-muted">Description is managed by I14Y</small>' : ''}
+                            </div>
+                            ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
+                            ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
+                            ${i14yDatasetInfo}
+                        `;
+                    } else if (node.type === 'class') {
+                        // Check if class is linked to I14Y (has i14y_id)
+                        const isI14YLinked = !!node.i14y_id;
+                        
+                        // For class nodes, show editable fields if not linked to I14Y
+                        let classEditableFields = '';
+                        if (!isI14YLinked) {
+                            classEditableFields = `
+                                <div class="mb-3 mt-3">
+                                    <label for="edit-node-title" class="form-label small">Title:</label>
+                                    <input type="text" class="form-control form-control-sm" id="edit-node-title" value="${node.title}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-node-description" class="form-label small">Description:</label>
+                                    <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
+                                </div>
+                                <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
+                            `;
+                        } else {
+                            classEditableFields = `
+                                <strong>Title:</strong> ${node.title}<br>
+                                <strong>Description:</strong> ${description}<br>
+                                <small class="text-muted">This ${node.type} is linked to I14Y and cannot be edited locally.</small><br>
+                            `;
+                        }
+                        
+                        // Count connected classes and concepts for relationships
+                        let relationshipInfo = '';
+                        fetch('/api/graph')
+                            .then(response => response.json())
+                            .then(graphData => {
+                                const connectedClasses = [];
+                                const connectedConcepts = [];
+                                
+                                graphData.edges.forEach(edge => {
+                                    if (edge.from === nodeId || edge.to === nodeId) {
+                                        const otherId = edge.from === nodeId ? edge.to : edge.from;
+                                        const otherNode = graphData.nodes.find(n => n.id === otherId);
+                                        if (otherNode) {
+                                            if (otherNode.type === 'class') {
+                                                connectedClasses.push(`${otherNode.label} (${edge.cardinality || '1..1'})`);
+                                            } else if (otherNode.type === 'concept') {
+                                                connectedConcepts.push(`${otherNode.label} (${edge.cardinality || '1..1'})`);
+                                            }
+                                        }
+                                    }
+                                });
+                                
+                                if (connectedClasses.length > 0) {
+                                    relationshipInfo += `<strong>Connected Classes:</strong> ${connectedClasses.join(', ')}<br>`;
+                                }
+                                if (connectedConcepts.length > 0) {
+                                    relationshipInfo += `<strong>Properties:</strong> ${connectedConcepts.join(', ')}<br>`;
+                                }
+                                
+                                const updatedInfo = `
+                                    <strong>Type:</strong> ${node.type}<br>
+                                    ${classEditableFields}
+                                    ${relationshipInfo}
+                                    ${i14yLink}
+                                    ${publisher}
+                                `;
+                                document.getElementById('selected-node-info').innerHTML = updatedInfo;
+                            });
+                        
+                        // Initial display without relationships (will be updated above)
+                        mainInfo = `
+                            <strong>Type:</strong> ${node.type}<br>
+                            ${classEditableFields}
+                            ${i14yLink}
+                            ${publisher}
+                        `;
+                    } else {
+                        // For concept nodes, show editable fields if not linked to I14Y
+                        const isI14YLinked = !!node.i14y_id;
+                        
+                        if (!isI14YLinked) {
+                            mainInfo = `
+                                <strong>Type:</strong> ${node.type}<br>
+                                <div class="mb-3 mt-3">
+                                    <label for="edit-node-title" class="form-label small">Title:</label>
+                                    <input type="text" class="form-control form-control-sm" id="edit-node-title" value="${node.title}">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-node-description" class="form-label small">Description:</label>
+                                    <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
+                                </div>
+                                <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
+                                ${i14yLink}
+                                ${publisher}
+                            `;
+                        } else {
+                            mainInfo = `
+                                <strong>Type:</strong> ${node.type}<br>
+                                <strong>Title:</strong> ${node.title}<br>
+                                <strong>Description:</strong> ${description}<br>
+                                <small class="text-muted">This ${node.type} is linked to I14Y and cannot be edited locally.</small><br>
+                                ${i14yLink}
+                                ${publisher}
+                            `;
+                        }
+                    }
+                    document.getElementById('selected-node-info').innerHTML = mainInfo;
+
+                    // Show or hide constraints section based on node type
+                    const constraintsSection = document.getElementById('constraints-section');
+                    if (node.type === 'dataset') {
+                        // Hide constraints for dataset nodes
+                        if (constraintsSection) constraintsSection.style.display = 'none';
+                    } else {
+                        // Show constraints for other node types
+                        if (constraintsSection) constraintsSection.style.display = 'block';
+                        
+                        // Show/hide constraint groups based on node type
+                        if (node.type === 'class') {
+                            // For classes, show all but length constraints
+                            document.getElementById('length-group').style.display = 'none';
+                            document.getElementById('pattern-group').style.display = 'block';
+                            document.getElementById('enumeration-group').style.display = 'block';
+                            document.getElementById('references-group').style.display = 'block';
+                            document.getElementById('datatype-field').style.display = 'none'; // Hide datatype for classes
+                        } else {
+                            // For concepts, show all constraint groups
+                            document.getElementById('length-group').style.display = 'block';
+                            document.getElementById('pattern-group').style.display = 'block';
+                            document.getElementById('enumeration-group').style.display = 'block';
+                            document.getElementById('references-group').style.display = 'block';
+                            document.getElementById('datatype-field').style.display = 'block';
+                        }
+                        
+                        // Update constraint fields (cardinality removed)
+                        document.getElementById('min-length').value = node.min_length || '';
+                        document.getElementById('max-length').value = node.max_length || '';
+                        document.getElementById('pattern').value = node.pattern || '';
+                        document.getElementById('in-values').value = node.in_values ? node.in_values.join(', ') : '';
+                        document.getElementById('node-reference').value = node.node_reference || '';
+                        document.getElementById('range').value = node.range || '';
+                        document.getElementById('datatype').value = node.datatype || '';
+                        
+                        // Show I14Y constraints notification if this is an I14Y concept with constraints
+                        const hasI14YConstraints = node.i14y_id && (node.pattern || (node.in_values && node.in_values.length > 0) || node.min_length || node.max_length || node.datatype);
+                        const constraintsInfo = document.getElementById('i14y-constraints-info');
+                        if (hasI14YConstraints) {
+                            constraintsInfo.style.display = 'block';
+                        } else {
+                            constraintsInfo.style.display = 'none';
+                        }
+                    }
+                });
+        }
+
+        function applyConstraints() {
+            if (!selectedNodeId) return;
+
+            const constraints = {
+                min_length: document.getElementById('min-length').value,
+                max_length: document.getElementById('max-length').value,
+                pattern: document.getElementById('pattern').value,
+                in_values: document.getElementById('in-values').value,
+                node_reference: document.getElementById('node-reference').value,
+                range: document.getElementById('range').value,
+                datatype: document.getElementById('datatype').value
+            };
+
+            fetch(`/api/nodes/${selectedNodeId}/constraints`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(constraints)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Constraints applied successfully!');
+                    // Reload the graph and node details to show updated information
+                    loadGraph();
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                } else {
+                    alert('Error applying constraints');
+                }
+            });
+        }
+
+        function clearConstraints() {
+            document.getElementById('min-length').value = '';
+            document.getElementById('max-length').value = '';
+            document.getElementById('pattern').value = '';
+            document.getElementById('in-values').value = '';
+            document.getElementById('node-reference').value = '';
+            document.getElementById('range').value = '';
+            document.getElementById('datatype').value = '';
+        }
+
+        function showAddConceptModal() {
+            new bootstrap.Modal(document.getElementById('addConceptModal')).show();
+        }
+
+        function addConcept() {
+            const title = document.getElementById('concept-title').value;
+            const description = document.getElementById('concept-description').value;
+
+            if (!title) {
+                alert('Title is required');
+                return;
+            }
+
+            // Determine if a class is selected
+            let parentId = null;
+            if (selectedNodeId) {
+                // Fetch node type to check if it's a class
+                fetch(`/api/nodes/${selectedNodeId}`)
+                    .then(response => response.json())
+                    .then(node => {
+                        if (node.type === 'class') {
+                            parentId = selectedNodeId;
+                        }
+                        fetch('/api/nodes', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                type: 'concept',
+                                title: title,
+                                description: description,
+                                parent_id: parentId
+                            })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                bootstrap.Modal.getInstance(document.getElementById('addConceptModal')).hide();
+                                document.getElementById('concept-title').value = '';
+                                document.getElementById('concept-description').value = '';
+                                loadGraph();
+                            }
+                        });
+                    });
+            } else {
+                // No node selected, add to dataset (default)
+                fetch('/api/nodes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'concept',
+                        title: title,
+                        description: description
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('addConceptModal')).hide();
+                        document.getElementById('concept-title').value = '';
+                        document.getElementById('concept-description').value = '';
+                        loadGraph();
+                    }
+                });
+            }
+        }
+
+        function createNewStructure() {
+            if (confirm('Are you sure you want to create a new structure? All unsaved changes will be lost.')) {
+                console.log('Creating new structure and redirecting...');
+                // Use the new server-side approach that does a redirect
+                window.location.href = '/new-structure';
+            }
+        }
+        
+        function showAddClassModal() {
+            new bootstrap.Modal(document.getElementById('addClassModal')).show();
+        }
+
+        function addClass() {
+            const title = document.getElementById('class-title').value;
+            const description = document.getElementById('class-description').value;
+
+            if (!title) {
+                alert('Title is required');
+                return;
+            }
+
+            fetch('/api/nodes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'class',
+                    title: title,
+                    description: description
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    bootstrap.Modal.getInstance(document.getElementById('addClassModal')).hide();
+                    document.getElementById('class-title').value = '';
+                    document.getElementById('class-description').value = '';
+                    loadGraph();
+                }
+            });
+        }
+
+        function removeSelected() {
+            if (!selectedNodeId) {
+                alert('Please select a node to remove');
+                return;
+            }
+
+            if (confirm('Are you sure you want to remove this node?')) {
+                fetch(`/api/nodes/${selectedNodeId}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        selectedNodeId = null;
+                        document.getElementById('selected-node-section').style.display = 'none';
+                        document.getElementById('selected-node-sidebar').style.display = 'none';
+                        loadGraph();
+                    } else {
+                        alert('Cannot remove this node');
+                    }
+                });
+            }
+        }
+
+        function detachSelected() {
+            if (!selectedEdgeId) {
+                alert('Please select a connection to detach');
+                return;
+            }
+
+            if (confirm('Are you sure you want to remove this connection?')) {
+                // Extract node IDs from edge ID (format: "node1-node2")
+                const edgeData = edges.get(selectedEdgeId);
+                if (edgeData) {
+                    fetch('/api/connections', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            node1_id: edgeData.from,
+                            node2_id: edgeData.to
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            selectedEdgeId = null;
+                            document.getElementById('detach-btn').style.display = 'none';
+                            document.getElementById('edge-status').style.display = 'none';
+                            loadGraph();
+                        } else {
+                            alert('Cannot remove this connection');
+                        }
+                    });
+                }
+            }
+        }
+
+        function toggleConnectionMode() {
+            connectionMode = !connectionMode;
+            pendingConnection = null;
+            
+            const button = event.target;
+            const status = document.getElementById('connection-status');
+            
+            if (connectionMode) {
+                button.textContent = 'Exit Connection Mode';
+                button.className = 'btn btn-outline-dark btn-sm w-100 mb-2';
+                status.style.display = 'block';
+            } else {
+                button.textContent = 'Connect Nodes';
+                button.className = 'btn btn-outline-dark btn-sm w-100 mb-2';
+                status.style.display = 'none';
+            }
+        }
+
+        function handleConnectionClick(nodeId) {
+            if (!pendingConnection) {
+                pendingConnection = nodeId;
+                document.getElementById('connection-status').innerHTML = '<small>Click another node to connect</small>';
+            } else {
+                if (pendingConnection !== nodeId) {
+                    connectTwoNodes(pendingConnection, nodeId);
+                }
+                pendingConnection = null;
+                document.getElementById('connection-status').innerHTML = '<small>Click two nodes to connect them</small>';
+            }
+        }
+
+        function connectTwoNodes(node1Id, node2Id) {
+            fetch('/api/connections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    node1_id: node1Id,
+                    node2_id: node2Id
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    loadGraph();
+                }
+            });
+        }
+
+        // Load additional datasets button
+        function showI14YDatasetSearchModal() {
+            new bootstrap.Modal(document.getElementById('i14yDatasetSearchModal')).show();
+            searchI14YDatasets(''); // Load initial results
+        }
+        
+        function disconnectI14YDataset() {
+            if (confirm('Are you sure you want to disconnect this dataset from I14Y? This will allow you to edit the title and description locally.')) {
+                fetch('/api/i14y/dataset/disconnect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error('Error disconnecting dataset:', data.error);
+                        alert(`Error disconnecting dataset: ${data.error}`);
+                        return;
+                    }
+                    
+                    console.log('Dataset disconnected successfully:', data);
+                    
+                    // Refresh the graph to show the updated dataset node
+                    // Force a timeout to ensure the backend has finished processing
+                    setTimeout(() => {
+                        loadGraph();
+                        
+                        // Refresh the node details to show the unlinked dataset
+                        if (selectedNodeId) {
+                            loadNodeDetails(selectedNodeId);
+                        }
+                        
+                        // Show success message
+                        showToast('Dataset Disconnected', 'Successfully disconnected from I14Y dataset');
+                    }, 500);
+                })
+                .catch(error => {
+                    console.error('Error disconnecting dataset:', error);
+                    alert(`Error disconnecting dataset: ${error.message}`);
+                });
+            }
+        }
+        
+        // Global variable to store the latest dataset search results
+        let lastI14YDatasetSearchResults = [];
+        
+        function searchI14YDatasets(query = null) {
+            if (query === null) {
+                query = document.getElementById('i14y-dataset-search-query').value;
+            }
+            
+            const resultsDiv = document.getElementById('i14y-dataset-results');
+            resultsDiv.innerHTML = '<p class="text-muted">Searching...</p>';
+            
+            console.log('Searching for datasets with query:', query);
+            
+            fetch(`/api/i14y/dataset/search?query=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('I14Y dataset search response:', data);
+                    
+                    if (data.error) {
+                        resultsDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                        return;
+                    }
+                    
+                    // Store the search results globally for later use
+                    lastI14YDatasetSearchResults = data.datasets || [];
+                    
+                    console.log('Dataset search results:', lastI14YDatasetSearchResults.length, 'items found');
+                    
+                    if (lastI14YDatasetSearchResults.length > 0) {
+                        let resultsHtml = '';
+                        
+                        lastI14YDatasetSearchResults.forEach(dataset => {
+                            // Get the title in the first available language
+                            let title = dataset.title;
+                            if (typeof title === 'object') {
+                                // Try to get title in specific languages
+                                title = title.de || title.en || title.fr || title.it || 'Unknown Dataset';
+                            }
+                            
+                            // Get the description in the first available language
+                            let description = dataset.description;
+                            if (typeof description === 'object') {
+                                description = description.de || description.en || description.fr || description.it || '';
+                            }
+                            
+                            // Prepare a short version of the description
+                            const shortDesc = description ? description.substring(0, 150) + (description.length > 150 ? '...' : '') : 'No description available';
+                            
+                            resultsHtml += `
+                                <div class="card mb-2">
+                                    <div class="card-body">
+                                        <h5 class="card-title">${escapeHtml(title)}</h5>
+                                        <p class="card-text small">${escapeHtml(shortDesc)}</p>
+                                        <button class="btn btn-sm btn-dataset" onclick="linkI14YDataset('${dataset.id}')">Link Dataset</button>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        resultsDiv.innerHTML = resultsHtml;
+                    } else {
+                        resultsDiv.innerHTML = '<p class="text-muted">No datasets found. Try a different search term.</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error searching for datasets:', error);
+                    resultsDiv.innerHTML = `<p class="text-danger">Search failed: ${error.message}</p>`;
+                });
+        }
+        
+        function linkI14YDataset(datasetId) {
+            console.log('Linking dataset:', datasetId);
+            
+            // Find the selected dataset from the search results
+            const datasetFromSearch = lastI14YDatasetSearchResults.find(d => d.id === datasetId);
+            
+            if (!datasetFromSearch) {
+                console.error('Dataset not found in search results');
+                alert('Error: Dataset not found in search results');
+                return;
+            }
+            
+            // Send the dataset data to the server to link with the current dataset node
+            fetch('/api/i14y/dataset/link', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    dataset_id: datasetId,
+                    dataset_data: datasetFromSearch
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error linking dataset:', data.error);
+                    alert(`Error linking dataset: ${data.error}`);
+                    return;
+                }
+                
+                console.log('Dataset linked successfully:', data);
+                
+                // Close the modal
+                bootstrap.Modal.getInstance(document.getElementById('i14yDatasetSearchModal')).hide();
+                
+                // Update the title and description inputs if we're on the dataset node
+                if (selectedNodeId && document.getElementById('edit-dataset-title')) {
+                    document.getElementById('edit-dataset-title').value = data.node.title;
+                    document.getElementById('edit-dataset-description').value = data.node.description;
+                }
+                
+                // Refresh the graph to show the updated dataset node
+                // Force a timeout to ensure the backend has finished processing
+                setTimeout(() => {
+                    loadGraph();
+                    
+                    // Refresh the node details to show the linked dataset
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                    
+                    // Show success message
+                    showToast('Dataset Linked', `Successfully linked to I14Y dataset: ${datasetFromSearch.title.de || datasetFromSearch.title.en || 'Unknown'}`);
+                }, 500);
+            })
+            .catch(error => {
+                console.error('Error linking dataset:', error);
+                alert(`Error linking dataset: ${error.message}`);
+            });
+        }
+        
+        function disconnectI14YDataset() {
+            console.log('Disconnecting I14Y dataset');
+            
+            if (!confirm('Are you sure you want to disconnect this dataset from I14Y? This will allow you to edit the title and description locally.')) {
+                return;
+            }
+            
+            // Send request to disconnect the dataset
+            fetch('/api/i14y/dataset/disconnect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error disconnecting dataset:', data.error);
+                    alert(`Error disconnecting dataset: ${data.error}`);
+                    return;
+                }
+                
+                console.log('Dataset disconnected successfully:', data);
+                
+                // Update the title and description inputs if we're on the dataset node
+                if (selectedNodeId && document.getElementById('edit-dataset-title')) {
+                    // Enable the input fields
+                    document.getElementById('edit-dataset-title').readOnly = false;
+                    document.getElementById('edit-dataset-description').readOnly = false;
+                }
+                
+                // Refresh the graph to show the updated dataset node
+                // Force a timeout to ensure the backend has finished processing
+                setTimeout(() => {
+                    loadGraph();
+                    
+                    // Refresh the node details to show the unlinked dataset
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                    
+                    // Show success message
+                    showToast('Dataset Disconnected', 'Successfully disconnected from I14Y dataset. You can now edit the title and description locally.');
+                }, 500);
+            })
+            .catch(error => {
+                console.error('Error disconnecting dataset:', error);
+                alert(`Error disconnecting dataset: ${error.message}`);
+            });
+        }
+        
+        function showI14YSearchModal() {
+            new bootstrap.Modal(document.getElementById('i14ySearchModal')).show();
+            searchI14Y(''); // Load initial results
+        }
+
+        // Global variable to store the latest search results
+        let lastI14YSearchResults = [];
+
+        function searchI14Y(query = null) {
+            if (query === null) {
+                query = document.getElementById('i14y-search-query').value;
+            }
+
+            const resultsDiv = document.getElementById('i14y-results');
+            resultsDiv.innerHTML = '<p class="text-muted">Searching...</p>';
+
+            fetch(`/api/i14y/search?query=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('I14Y search response:', data);
+                    
+                    if (data.error) {
+                        resultsDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                        return;
+                    }
+                    
+                    // Store the search results globally for later use
+                    lastI14YSearchResults = data.concepts || [];
+                    
+                    if (data.concepts && data.concepts.length > 0) {
+                        resultsDiv.innerHTML = data.concepts.map(concept => {
+                            // Handle multilingual fields properly
+                            const title = getMultilingualText(concept.title) || 'Untitled';
+                            const description = getMultilingualText(concept.description) || 'No description';
+                            const publisher = getMultilingualText(concept.publisherName) || 'Unknown';
+                            
+                            // Make sure we have a valid concept ID
+                            const conceptId = concept.id || concept.uuid || '';
+                            
+                            // Store the concept ID separately for safety
+                            const safeConceptId = conceptId.replace(/"/g, '&quot;');
+                            
+                            // Add debugging info to help identify concept ID issues
+                            console.log(`Concept ID: ${conceptId}, Title: ${title}`);
+                            
+                            return `
+                                <div class="card mb-2">
+                                    <div class="card-body">
+                                        <h6 class="card-title">${escapeHtml(title)}</h6>
+                                        <p class="card-text small">${escapeHtml(description)}</p>
+                                        <p class="card-text"><small class="text-muted">Publisher: ${escapeHtml(publisher)}</small></p>
+                                        <p class="card-text"><small class="text-muted">Type: ${concept.conceptValueType || concept.type || 'Concept'}</small></p>
+                                        <p class="card-text"><small class="text-muted">ID: ${safeConceptId}</small></p>
+                                        <button class="btn btn-primary btn-sm" onclick="addI14YConceptById('${safeConceptId}')">
+                                            Add Concept
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    } else {
+                        resultsDiv.innerHTML = '<p class="text-muted">No concepts found</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Search error:', error);
+                    resultsDiv.innerHTML = '<p class="text-danger">Error searching concepts</p>';
+                });
+        }
+        
+        // Function to show toast notifications
+        function showToast(title, message) {
+            // Create toast container if it doesn't exist
+            let toastContainer = document.getElementById('toast-container');
+            if (!toastContainer) {
+                toastContainer = document.createElement('div');
+                toastContainer.id = 'toast-container';
+                toastContainer.className = 'position-fixed bottom-0 end-0 p-3';
+                toastContainer.style.zIndex = '1050';
+                document.body.appendChild(toastContainer);
+            }
+            
+            // Create a unique ID for the toast
+            const toastId = 'toast-' + Date.now();
+            
+            // Create toast HTML
+            const toastHtml = `
+                <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="toast-header">
+                        <strong class="me-auto">${title}</strong>
+                        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                    <div class="toast-body">
+                        ${message}
+                    </div>
+                </div>
+            `;
+            
+            // Add toast to container
+            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+            
+            // Initialize and show the toast
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
+            toast.show();
+            
+            // Remove toast after it's hidden
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+        }
+
+        function getMultilingualText(multilingualObj) {
+            if (!multilingualObj) return null;
+            if (typeof multilingualObj === 'string') return multilingualObj;
+            
+            // Try languages in order of preference: de, en, fr, it
+            return multilingualObj.de || multilingualObj.en || multilingualObj.fr || multilingualObj.it || null;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Function to add concept by ID - This avoids the JSON parsing issue
+        function addI14YConceptById(conceptId) {
+            console.log('Adding I14Y concept with ID:', conceptId);
+            
+            // Find the concept in the last search results
+            const conceptFromSearch = lastI14YSearchResults.find(c => c.id === conceptId);
+            
+            // First try to get the concept from I14Y API
+            fetch(`/api/i14y/concept/${conceptId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        // If API returns an error, use the concept from search results
+                        console.log('API returned error, using concept from search results');
+                        if (conceptFromSearch) {
+                            console.log('Found concept in search results:', conceptFromSearch);
+                            addI14YConceptWithData(conceptId, conceptFromSearch);
+                        } else {
+                            console.error('Concept not found in search results');
+                            alert('Error: Concept not found');
+                        }
+                        throw new Error('API error');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success && data.concept) {
+                        console.log('Got concept data from API:', data.concept);
+                        addI14YConceptWithData(conceptId, data.concept);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching concept:', error);
+                    // Error already handled above
+                });
+        }
+        
+        function addI14YConceptWithData(conceptId, conceptData) {
+            console.log('Adding I14Y concept with data:', conceptData);
+            
+            // Make sure we have valid concept data
+            if (!conceptData || typeof conceptData !== 'object') {
+                console.error('Invalid concept data:', conceptData);
+                alert('Error: Invalid concept data');
+                return;
+            }
+            
+            // Determine if a class is selected
+            let parentId = null;
+            if (selectedNodeId) {
+                console.log('Node selected, checking if it is a class:', selectedNodeId);
+                fetch(`/api/nodes/${selectedNodeId}`)
+                    .then(response => response.json())
+                    .then(node => {
+                        console.log('Selected node data:', node);
+                        if (node.type === 'class') {
+                            parentId = selectedNodeId;
+                            console.log('Parent is a class, setting parentId:', parentId);
+                        }
+                        console.log('Sending POST request to /api/i14y/add with parentId:', parentId);
+                        fetch('/api/i14y/add', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ concept_data: conceptData, parent_id: parentId })
+                        })
+                        .then(response => {
+                            console.log('Response from /api/i14y/add:', response);
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log('Parsed response data:', data);
+                            if (data.success) {
+                                bootstrap.Modal.getInstance(document.getElementById('i14ySearchModal')).hide();
+                                console.log('Success adding concept, loading graph...');
+                                loadGraph();
+                                // If the newly added concept is selected, refresh its details to show constraints
+                                if (data.node_id && selectedNodeId === data.node_id) {
+                                    loadNodeDetails(data.node_id);
+                                }
+                            } else {
+                                console.error('Error from server:', data.error);
+                                alert('Error adding I14Y concept: ' + (data.error || 'Unknown error'));
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            alert('Error adding I14Y concept');
+                        });
+                    });
+            } else {
+                console.log('No node selected, adding concept directly');
+                fetch('/api/i14y/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ concept_data: conceptData })
+                })
+                .then(response => {
+                    console.log('Response from /api/i14y/add:', response);
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Parsed response data:', data);
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('i14ySearchModal')).hide();
+                        console.log('Success adding concept, loading graph...');
+                        loadGraph();
+                        // If the newly added concept is selected, refresh its details to show constraints
+                        if (data.node_id && selectedNodeId === data.node_id) {
+                            loadNodeDetails(data.node_id);
+                        }
+                    } else {
+                        console.error('Error from server:', data.error);
+                        alert('Error adding I14Y concept: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error adding I14Y concept');
+                });
+            }
+        }
+
+        function exportTTL() {
+            // First get the dataset information to use as filename
+            fetch('/api/dataset')
+                .then(response => response.json())
+                .then(data => {
+                    // Use dataset identifier or title as filename, fallback to default
+                    let filename = 'shacl_structure.ttl';
+                    if (data.identifier && data.identifier.trim()) {
+                        filename = data.identifier.trim() + '.ttl';
+                    } else if (data.title && data.title.trim()) {
+                        // Sanitize title for use as filename
+                        const sanitizedTitle = data.title.trim()
+                            .replace(/[^a-zA-Z0-9\-_]/g, '_')
+                            .replace(/_+/g, '_')
+                            .replace(/^_|_$/g, '');
+                        filename = sanitizedTitle + '.ttl';
+                    }
+                    
+                    // Open export with filename parameter
+                    window.open(`/api/export/ttl?filename=${encodeURIComponent(filename)}`, '_blank');
+                })
+                .catch(error => {
+                    console.error('Error getting dataset info:', error);
+                    // Fallback to default export
+                    window.open('/api/export/ttl', '_blank');
+                });
+        }
+
+        function importTTL(input) {
+            if (!input.files || input.files.length === 0) return;
+            
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/api/import/ttl', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('TTL file imported successfully!');
+                    loadGraph();
+                } else {
+                    alert('Error importing TTL file: ' + (data.error || 'Unknown error'));
+                }
+                // Reset file input
+                input.value = '';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error importing TTL file');
+                input.value = '';
+            });
+        }
+        
+        function importExampleTTL() {
+            fetch('/api/import/example/ttl')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Example TTL file imported successfully!');
+                    loadGraph();
+                } else {
+                    alert('Error importing example TTL file: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error importing example TTL file');
+            });
+        }
+        
+        // Store the selected CSV file for import
+        let selectedCSVFile = null;
+        
+        function showCSVImportModal(input) {
+            if (!input.files || input.files.length === 0) return;
+            
+            selectedCSVFile = input.files[0];
+            
+            // Set the dataset name based on the file name (without extension)
+            const fileName = selectedCSVFile.name;
+            const nameWithoutExt = fileName.split('.').slice(0, -1).join('.');
+            document.getElementById('csv-dataset-name').value = nameWithoutExt || 'Imported Dataset';
+            
+            // Show the modal
+            const csvModal = new bootstrap.Modal(document.getElementById('csvImportModal'));
+            csvModal.show();
+        }
+        
+        function importCSV() {
+            if (!selectedCSVFile) {
+                alert('No CSV file selected');
+                return;
+            }
+            
+            const datasetName = document.getElementById('csv-dataset-name').value;
+            const lang = document.getElementById('csv-lang').value;
+            
+            const formData = new FormData();
+            formData.append('file', selectedCSVFile);
+            formData.append('dataset_name', datasetName);
+            formData.append('lang', lang);
+            
+            // Show loading state
+            const importButton = document.querySelector('#csvImportModal button.btn-primary');
+            const originalText = importButton.textContent;
+            importButton.textContent = 'Importing...';
+            importButton.disabled = true;
+            
+            fetch('/api/import/csv', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button state
+                importButton.textContent = originalText;
+                importButton.disabled = false;
+                
+                // Close the modal
+                bootstrap.Modal.getInstance(document.getElementById('csvImportModal')).hide();
+                
+                if (data.success) {
+                    alert('CSV file imported successfully!');
+                    loadGraph();
+                } else {
+                    alert('Error importing CSV file: ' + (data.error || 'Unknown error'));
+                }
+                // Reset file input
+                document.getElementById('csv-file').value = '';
+                selectedCSVFile = null;
+            })
+            .catch(error => {
+                // Reset button state
+                importButton.textContent = originalText;
+                importButton.disabled = false;
+                
+                console.error('Error:', error);
+                alert('Error importing CSV file');
+                document.getElementById('csv-file').value = '';
+                selectedCSVFile = null;
+            });
+        }
+
+        function saveProject() {
+            // First get the dataset information to use as filename
+            fetch('/api/dataset')
+                .then(response => response.json())
+                .then(data => {
+                    // Use dataset identifier or title as filename, fallback to default
+                    let filename = 'shacl_project.json';
+                    if (data.identifier && data.identifier.trim()) {
+                        filename = data.identifier.trim() + '_project.json';
+                    } else if (data.title && data.title.trim()) {
+                        // Sanitize title for use as filename
+                        const sanitizedTitle = data.title.trim()
+                            .replace(/[^a-zA-Z0-9\-_]/g, '_')
+                            .replace(/_+/g, '_')
+                            .replace(/^_|_$/g, '');
+                        filename = sanitizedTitle + '_project.json';
+                    }
+                    
+                    // Now save the project with the determined filename
+                    return fetch('/api/project/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    })
+                    .then(response => {
+                        if (response.ok) {
+                            return response.blob();
+                        } else {
+                            throw new Error('Failed to save project');
+                        }
+                    })
+                    .then(blob => {
+                        // Create download link with dynamic filename
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error saving project:', error);
+                    alert('Error saving project: ' + error.message);
+                });
+        }
+
+        function loadProject(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/project/load', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Project loaded successfully!');
+                    loadDataset();
+                    loadGraph();
+                    selectedNodeId = null;
+                    document.getElementById('selected-node-section').style.display = 'none';
+                    document.getElementById('selected-node-sidebar').style.display = 'none';
+                } else {
+                    alert('Error loading project: ' + data.error);
+                }
+            });
+        }
+
+        function loadEdgeDetails(edgeId) {
+            fetch(`/api/edges/${edgeId}`)
+                .then(response => response.json())
+                .then(edge => {
+                    // Get node names for display
+                    const fromNode = nodes.get(edge.from);
+                    const toNode = nodes.get(edge.to);
+                    
+                    document.getElementById('selected-edge-info').innerHTML = `
+                        <strong>Connection:</strong> ${fromNode ? fromNode.label : edge.from} → ${toNode ? toNode.label : edge.to}<br>
+                        <strong>Current Cardinality:</strong> ${edge.cardinality || '1..1'}
+                    `;
+                    
+                    // Set the cardinality dropdown
+                    const cardinalitySelect = document.getElementById('edge-cardinality');
+                    const currentCardinality = edge.cardinality || '1..1';
+                    
+                    // Check if current cardinality is one of the predefined options
+                    const predefinedOptions = ['0..1', '1..1', '0..n', '1..n', '0..0', '2..5'];
+                    if (predefinedOptions.includes(currentCardinality)) {
+                        cardinalitySelect.value = currentCardinality;
+                        document.getElementById('custom-cardinality-section').style.display = 'none';
+                    } else {
+                        cardinalitySelect.value = '2..5'; // Custom option
+                        document.getElementById('custom-cardinality').value = currentCardinality;
+                        document.getElementById('custom-cardinality-section').style.display = 'block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading edge details:', error);
+                    document.getElementById('selected-edge-info').innerHTML = `
+                        <strong>Connection:</strong> ${edgeId}<br>
+                        <strong>Current Cardinality:</strong> 1..1 (default)
+                    `;
+                });
+        }
+
+        function applyEdgeCardinality() {
+            if (!selectedEdgeId) return;
+
+            let cardinality = document.getElementById('edge-cardinality').value;
+            
+            // If custom cardinality is selected, use the custom value
+            if (cardinality === '2..5' && document.getElementById('custom-cardinality-section').style.display !== 'none') {
+                cardinality = document.getElementById('custom-cardinality').value.trim();
+                if (!cardinality) {
+                    alert('Please enter a cardinality value');
+                    return;
+                }
+            }
+
+            fetch(`/api/edges/${selectedEdgeId}/cardinality`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cardinality: cardinality })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Store the selected edge ID for re-selection
+                    const edgeToReselect = selectedEdgeId;
+                    
+                    // Get all current edges
+                    const allEdges = edges.get();
+                    
+                    // Remove all edges from the dataset
+                    edges.clear();
+                    
+                    // Force network to process the removal
+                    network.redraw();
+                    
+                    // After a short delay, re-add all edges (this forces vis.js to recreate DOM elements)
+                    setTimeout(() => {
+                        // Get updated graph data from server to ensure we have latest cardinality
+                        fetch('/api/graph')
+                            .then(response => response.json())
+                            .then(graphData => {
+                                if (graphData.edges && Array.isArray(graphData.edges)) {
+                                    const edgeDataArray = [];
+                                    graphData.edges.forEach(edge => {
+                                        const fromNode = nodes.get(edge.from);
+                                        const toNode = nodes.get(edge.to);
+                                        
+                                        const edgeData = {
+                                            id: edge.id,
+                                            from: edge.from,
+                                            to: edge.to,
+                                            label: '', // Removed cardinality labels
+                                            arrows: 'to'
+                                        };
+                                        
+                                        // Style class-to-class connections differently
+                                        if (fromNode && toNode && fromNode.type === 'class' && toNode.type === 'class') {
+                                            edgeData.color = { color: '#ff6b35' };
+                                            edgeData.width = 3;
+                                            edgeData.dashes = [5, 5];
+                                            edgeData.font = { color: '#ff6b35', size: 11 };
+                                        } else {
+                                            edgeData.color = { color: '#848484' };
+                                            edgeData.width = 2;
+                                        }
+                                        
+                                        edgeDataArray.push(edgeData);
+                                    });
+                                    
+                                    // Add all edges back
+                                    edges.add(edgeDataArray);
+                                    
+                                    // Re-select the edge
+                                    setTimeout(() => {
+                                        if (edgeToReselect) {
+                                            selectedEdgeId = edgeToReselect;
+                                            network.selectEdges([edgeToReselect]);
+                                            
+                                            // Show edge-related UI
+                                            document.getElementById('selected-node-section').style.display = 'none';
+                                            document.getElementById('no-node-selected').style.display = 'none';
+                                            document.getElementById('selected-edge-section').style.display = 'block';
+                                            document.getElementById('detach-btn').style.display = 'block';
+                                            document.getElementById('edge-status').style.display = 'block';
+                                            
+                                            loadEdgeDetails(edgeToReselect);
+                                        }
+                                    }, 100);
+                                }
+                            });
+                    }, 150);
+                    
+                    alert('Cardinality updated successfully!');
+                } else {
+                    alert('Error updating cardinality');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating cardinality');
+            });
+        }
+
+        function clearEdgeSelection() {
+            selectedEdgeId = null;
+            document.getElementById('selected-edge-section').style.display = 'none';
+            document.getElementById('no-node-selected').style.display = 'block';
+            document.getElementById('detach-btn').style.display = 'none';
+            document.getElementById('edge-status').style.display = 'none';
+            
+            // Clear network selection
+            network.unselectAll();
+        }
+
+        // Allow Enter key to trigger search
+        
+        // Add event listeners for search query inputs
+        document.addEventListener('DOMContentLoaded', function() {
+            // For concept search
+            document.getElementById('i14y-search-query').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchI14Y();
+                }
+            });
+            
+            // For dataset search
+            document.getElementById('i14y-dataset-search-query').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchI14YDatasets();
+                }
+            });
+        });        // Handle cardinality dropdown change
+        document.getElementById('edge-cardinality').addEventListener('change', function(e) {
+            const customSection = document.getElementById('custom-cardinality-section');
+            if (e.target.value === '2..5') {
+                customSection.style.display = 'block';
+            } else {
+                customSection.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

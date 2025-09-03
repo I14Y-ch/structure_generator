@@ -1,0 +1,113 @@
+#graph-container {
+    height: 70vh;
+    border: 0px solid #ddd;
+    border-radius: 5px;
+}
+
+.sidebar {
+    background-color: #f8f9fa;
+    min-height: 100vh;
+    padding: 20px;
+    border-right: 1px solid #dee2e6;
+}
+
+.constraint-group {
+    background-color: white;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.constraint-group h6 {
+    color: #495057;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.btn-sm {
+    margin: 2px;
+}
+
+.selected-node-info {
+    background-color: #e3f2fd;
+    border-left: 4px solid #2196f3;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.connection-mode {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+}
+
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.main-content {
+    padding: 20px;
+}
+
+#no-node-selected {
+    padding: 2rem;
+    margin-top: 2rem;
+}
+
+.right-sidebar {
+    padding: 20px;
+}
+
+/* Ensure all columns start at the same height */
+.col-md-2, .col-md-7, .col-md-3 {
+    padding-top: 20px;
+}
+
+/* Button colors for node types */
+.btn-class {
+    background-color: #99ff99; /* Light green for classes */
+    border-color: #99ff99;
+    color: #000;
+}
+
+.btn-class:hover {
+    background-color: #88ee88;
+    border-color: #88ee88;
+}
+
+.btn-concept {
+    background-color: #99ccff; /* Light blue for concepts */
+    border-color: #99ccff;
+    color: #000;
+}
+
+.btn-concept:hover {
+    background-color: #88bbee;
+    border-color: #88bbee;
+}
+
+.btn-dataset {
+    background-color: #ff9999; /* Light red for dataset */
+    border-color: #ff9999;
+    color: #000;
+}
+
+.btn-dataset:hover {
+    background-color: #ee8888;
+    border-color: #ee8888;
+}
+
+.btn-new-structure {
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+    color: #000;
+}
+
+.btn-new-structure:hover {
+    background-color: #e2e6ea;
+    border-color: #dae0e5;
+}
