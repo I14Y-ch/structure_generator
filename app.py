@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
-from flask import Flask, render_template, request, jsonify, send_file, redirect
+from flask import Flask, render_template, request, jsonify, send_file, redirect, session
 import json
 import os
 import tempfile
 import requests
 import uuid
-from datetime import datetime
+import threading
+import time
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import csv
 import io
@@ -16,6 +18,83 @@ from rdflib.namespace import RDF, XSD, SH, OWL, RDFS, DCTERMS
 
 # Import CSV converter 
 from csv_converter import csv_to_ttl
+
+class SessionManager:
+    """Manages user sessions and automatic cleanup"""
+    
+    def __init__(self, session_timeout_hours=2, cleanup_interval_minutes=30):
+        self.sessions = {}  # session_id -> FlaskSHACLGraphEditor
+        self.session_timestamps = {}  # session_id -> last_activity_time
+        self.session_timeout = timedelta(hours=session_timeout_hours)
+        self.cleanup_interval = cleanup_interval_minutes * 60  # Convert to seconds
+        self.lock = threading.RLock()
+        self.cleanup_thread = None
+        self.start_cleanup_thread()
+    
+    def start_cleanup_thread(self):
+        """Start the automatic cleanup thread"""
+        if self.cleanup_thread is None or not self.cleanup_thread.is_alive():
+            self.cleanup_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
+            self.cleanup_thread.start()
+    
+    def _cleanup_loop(self):
+        """Background thread that periodically cleans up expired sessions"""
+        while True:
+            try:
+                time.sleep(self.cleanup_interval)
+                self.cleanup_expired_sessions()
+            except Exception as e:
+                print(f"Error in session cleanup: {e}")
+    
+    def cleanup_expired_sessions(self):
+        """Remove sessions that haven't been active for too long"""
+        now = datetime.now()
+        expired_sessions = []
+        
+        with self.lock:
+            for session_id, last_activity in self.session_timestamps.items():
+                if now - last_activity > self.session_timeout:
+                    expired_sessions.append(session_id)
+            
+            for session_id in expired_sessions:
+                if session_id in self.sessions:
+                    print(f"Cleaning up expired session: {session_id}")
+                    del self.sessions[session_id]
+                    del self.session_timestamps[session_id]
+        
+        if expired_sessions:
+            print(f"Cleaned up {len(expired_sessions)} expired sessions")
+    
+    def get_editor_for_session(self, session_id):
+        """Get or create an editor for the given session"""
+        with self.lock:
+            # Update activity timestamp
+            self.session_timestamps[session_id] = datetime.now()
+            
+            # Get or create editor for this session
+            if session_id not in self.sessions:
+                print(f"Creating new editor for session: {session_id}")
+                # Create FlaskSHACLGraphEditor instance - class will be defined later
+                self.sessions[session_id] = None  # Will be set when class is available
+            
+            return self.sessions[session_id]
+    
+    def get_session_stats(self):
+        """Get statistics about active sessions"""
+        with self.lock:
+            return {
+                'active_sessions': len(self.sessions),
+                'session_details': [
+                    {
+                        'session_id': sid[:8] + '...',  # Partial ID for privacy
+                        'last_activity': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                        'nodes_count': len(editor.nodes) if hasattr(editor, 'nodes') else 0
+                    }
+                    for sid, (editor, timestamp) in 
+                    zip(self.sessions.keys(), 
+                        zip(self.sessions.values(), self.session_timestamps.values()))
+                ]
+            }
 
 class I14YAPIClient:
     """Client for interacting with I14Y API"""
@@ -2355,7 +2434,9 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 #------------------------------------------------------------------------------
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-change-this'  # Change this in production
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_TYPE'] = 'filesystem'
 
 class FlaskSHACLGraphEditor:
     """
@@ -2575,39 +2656,49 @@ class FlaskSHACLGraphEditor:
             print(f"Error loading graph: {e}")
             return False
 
-# Create an instance of the graph editor
-editor = FlaskSHACLGraphEditor()
+# Create a session manager instance (moved from above to resolve import order)
+session_manager = SessionManager()
 
-# Initialize with a default dataset node if none exists
-dataset_exists = False
-for node in editor.nodes.values():
-    if node.type == 'dataset':
-        dataset_exists = True
-        break
+# Session manager will handle initialization for each user session
+
+def get_user_editor():
+    """Get the editor instance for the current user session"""
+    if 'session_id' not in session:
+        session['session_id'] = str(uuid.uuid4())
+    
+    session_id = session['session_id']
+    editor = session_manager.get_editor_for_session(session_id)
+    
+    # Initialize editor if it's None (first time creation)
+    if editor is None:
+        editor = FlaskSHACLGraphEditor()
+        session_manager.sessions[session_id] = editor
+        session_manager.session_timestamps[session_id] = datetime.now()
         
-if not dataset_exists:
-    dataset_node = SHACLNode('dataset', title="New Dataset", description="Dataset description")
-    editor.nodes[dataset_node.id] = dataset_node
+        # Initialize with default dataset node
+        dataset_exists = False
+        for node in editor.nodes.values():
+            if node.type == 'dataset':
+                dataset_exists = True
+                break
+        
+        if not dataset_exists:
+            dataset_node = SHACLNode('dataset', title="New Dataset", description="Dataset description")
+            editor.nodes[dataset_node.id] = dataset_node
+    
+    return editor
 
 @app.route('/')
 def index():
     """Render the main application page"""
-    # Ensure we have a dataset node
-    dataset_exists = False
-    for node in editor.nodes.values():
-        if node.type == 'dataset':
-            dataset_exists = True
-            break
-            
-    if not dataset_exists:
-        dataset_node = SHACLNode('dataset', title="New Dataset", description="Dataset description")
-        editor.nodes[dataset_node.id] = dataset_node
-        
+    # Get user-specific editor (already initializes if needed)
+    get_user_editor()
     return render_template('index.html')
 
 @app.route('/api/graph', methods=['GET'])
 def get_graph():
     """Get the graph data for visualization"""
+    editor = get_user_editor()
     nodes_data = []
     edges_data = []
     
@@ -2728,11 +2819,13 @@ def get_graph():
 @app.route('/api/nodes', methods=['GET'])
 def get_nodes():
     """Get all nodes in the graph"""
+    editor = get_user_editor()
     return jsonify(editor.get_all_nodes())
 
 @app.route('/api/nodes', methods=['POST'])
 def add_node():
     """Add a new node to the graph"""
+    editor = get_user_editor()
     data = request.json
     node_type = data.get('type')
     title = data.get('title')
@@ -2789,6 +2882,7 @@ def add_node():
 @app.route('/api/nodes/<node_id>/select', methods=['POST'])
 def select_node(node_id):
     """Select a node in the graph"""
+    editor = get_user_editor()
     if node_id not in editor.nodes:
         return jsonify({"error": "Node not found"}), 404
     
@@ -2800,6 +2894,7 @@ def select_node(node_id):
 @app.route('/api/nodes/<node_id>', methods=['GET'])
 def get_node(node_id):
     """Get details for a specific node"""
+    editor = get_user_editor()
     if node_id not in editor.nodes:
         return jsonify({"error": "Node not found"}), 404
     
@@ -2827,6 +2922,7 @@ def get_node(node_id):
 @app.route('/api/nodes/<node_id>/constraints', methods=['POST'])
 def update_constraints(node_id):
     """Update constraints for a node"""
+    editor = get_user_editor()
     if node_id not in editor.nodes:
         return jsonify({"error": "Node not found"}), 404
     
@@ -2884,6 +2980,7 @@ def update_constraints(node_id):
 @app.route('/api/nodes/<node_id>', methods=['PUT'])
 def update_node(node_id):
     """Update a node"""
+    editor = get_user_editor()
     node_data = request.json
     result = editor.update_node(node_id, node_data)
     if result:
@@ -2893,6 +2990,7 @@ def update_node(node_id):
 @app.route('/api/nodes/<node_id>', methods=['DELETE'])
 def delete_node(node_id):
     """Delete a node"""
+    editor = get_user_editor()
     success = editor.delete_node(node_id)
     if success:
         return jsonify({"success": True})
@@ -2901,6 +2999,7 @@ def delete_node(node_id):
 @app.route('/api/connections', methods=['POST'])
 def create_connection():
     """Create a connection between nodes"""
+    editor = get_user_editor()
     data = request.json
     node1_id = data.get('node1_id')
     node2_id = data.get('node2_id')
@@ -2924,6 +3023,7 @@ def create_connection():
 @app.route('/api/connections', methods=['DELETE'])
 def delete_connection():
     """Delete a connection between nodes"""
+    editor = get_user_editor()
     data = request.json
     node1_id = data.get('node1_id')
     node2_id = data.get('node2_id')
@@ -2951,6 +3051,7 @@ def delete_connection():
 @app.route('/api/edges/<edge_id>', methods=['GET'])
 def get_edge(edge_id):
     """Get edge details by ID"""
+    editor = get_user_editor()
     edge = editor.get_edge(edge_id)
     if edge:
         return jsonify(edge)
@@ -2959,6 +3060,7 @@ def get_edge(edge_id):
 @app.route('/api/edges/<edge_id>/cardinality', methods=['POST'])
 def update_edge_cardinality(edge_id):
     """Update the cardinality of an edge"""
+    editor = get_user_editor()
     data = request.json
     cardinality = data.get('cardinality')
     
@@ -2973,6 +3075,7 @@ def update_edge_cardinality(edge_id):
 @app.route('/api/connect', methods=['POST'])
 def connect_nodes():
     """Connect two nodes"""
+    editor = get_user_editor()
     data = request.json
     source_id = data.get('source')
     target_id = data.get('target')
@@ -2988,6 +3091,7 @@ def connect_nodes():
 @app.route('/api/disconnect', methods=['POST'])
 def disconnect_nodes():
     """Disconnect two nodes"""
+    editor = get_user_editor()
     data = request.json
     source_id = data.get('source')
     target_id = data.get('target')
@@ -3003,12 +3107,14 @@ def disconnect_nodes():
 @app.route('/api/generate-ttl', methods=['GET'])
 def generate_ttl():
     """Generate TTL for the graph"""
+    editor = get_user_editor()
     ttl = editor.generate_ttl()
     return jsonify({"ttl": ttl})
 
 @app.route('/api/download-ttl', methods=['GET'])
 def download_ttl():
     """Download the graph as a TTL file"""
+    editor = get_user_editor()
     ttl = editor.generate_ttl()
     
     # Create a temporary file
@@ -3022,6 +3128,7 @@ def download_ttl():
 @app.route('/api/save', methods=['POST'])
 def save_graph():
     """Save the graph to a file"""
+    editor = get_user_editor()
     filename = request.json.get('filename', f"shacl_graph_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     
     # Ensure the data directory exists
@@ -3038,6 +3145,7 @@ def save_graph():
 @app.route('/api/load', methods=['POST'])
 def load_graph():
     """Load a graph from a file"""
+    editor = get_user_editor()
     filename = request.json.get('filename')
     
     if not filename:
@@ -3057,6 +3165,7 @@ def load_graph():
 @app.route('/api/project/save', methods=['POST'])
 def save_project():
     """Save the current project to a file for download"""
+    editor = get_user_editor()
     try:
         # Prepare project data
         project_data = {
@@ -3087,6 +3196,7 @@ def save_project():
 @app.route('/api/project/load', methods=['POST'])
 def load_project():
     """Load a project from uploaded file"""
+    editor = get_user_editor()
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
     
@@ -3154,6 +3264,7 @@ def list_files():
 @app.route('/api/project/new', methods=['POST'])
 def new_project():
     """Create a new empty structure"""
+    editor = get_user_editor()
     try:
         print("API: Creating new project structure")
         
@@ -3191,6 +3302,7 @@ def new_project():
 @app.route('/new-structure', methods=['GET'])
 def new_structure_page():
     """Create a new structure and redirect to home page"""
+    editor = get_user_editor()
     try:
         # Reset the structure
         editor.reset_structure()
@@ -3202,6 +3314,7 @@ def new_structure_page():
 @app.route('/api/i14y/search', methods=['GET'])
 def search_i14y():
     """Search for concepts in I14Y"""
+    editor = get_user_editor()
     print("=== API: Received request to search I14Y concepts ===")
     
     query = request.args.get('query', '') or request.args.get('q', '')
@@ -3242,6 +3355,7 @@ def search_i14y():
 @app.route('/api/i14y/dataset/search', methods=['GET'])
 def search_i14y_datasets():
     """Search for datasets in I14Y"""
+    editor = get_user_editor()
     print("=== API: Received request to search I14Y datasets ===")
     
     query = request.args.get('query', '') or request.args.get('q', '')
@@ -3282,6 +3396,7 @@ def search_i14y_datasets():
 @app.route('/api/i14y/dataset/link', methods=['POST'])
 def link_i14y_dataset():
     """Link an I14Y dataset to the current dataset node"""
+    editor = get_user_editor()
     print("=== API: Received request to link I14Y dataset ===")
     
     if not request.is_json:
@@ -3367,6 +3482,7 @@ def link_i14y_dataset():
 @app.route('/api/i14y/dataset/disconnect', methods=['POST'])
 def disconnect_i14y_dataset():
     """Disconnect an I14Y dataset from the current dataset node"""
+    editor = get_user_editor()
     print("=== API: Received request to disconnect I14Y dataset ===")
     
     try:
@@ -3470,6 +3586,7 @@ def disconnect_i14y_dataset():
 @app.route('/api/export/ttl', methods=['GET'])
 def export_ttl():
     """Export the graph as TTL"""
+    editor = get_user_editor()
     try:
         # Generate TTL
         ttl_content = generate_full_ttl(editor.nodes, editor.base_uri)
@@ -3523,6 +3640,7 @@ def export_ttl():
 @app.route('/api/i14y/schemes', methods=['GET'])
 def get_schemes():
     """Get all concept schemes from I14Y"""
+    editor = get_user_editor()
     try:
         # Check if the method exists in the client
         if hasattr(editor.i14y_client, 'get_concept_schemes'):
@@ -3537,6 +3655,7 @@ def get_schemes():
 @app.route('/api/i14y/concept/<concept_id>', methods=['GET'])
 def get_i14y_concept(concept_id):
     """Get details of a specific I14Y concept by ID"""
+    editor = get_user_editor()
     print(f"=== API: Received request to get I14Y concept with ID: {concept_id} ===")
     
     try:
@@ -3565,6 +3684,7 @@ def get_i14y_concept(concept_id):
 @app.route('/api/i14y/add', methods=['POST'])
 def add_i14y_concept():
     """Add an I14Y concept to the graph"""
+    editor = get_user_editor()
     print("=== API: Received request to add I14Y concept ===")
     
     if not request.is_json:
@@ -3646,6 +3766,7 @@ def add_i14y_concept():
 @app.route('/api/dataset', methods=['GET', 'POST'])
 def handle_dataset():
     """Get or update dataset information"""
+    editor = get_user_editor()
     # Find the dataset node
     dataset_node = None
     for node_id, node in editor.nodes.items():
@@ -3908,6 +4029,7 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
 @app.route('/api/import/ttl', methods=['POST'])
 def import_ttl():
     """Import SHACL schema from TTL file"""
+    editor = get_user_editor()
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
     
@@ -3970,6 +4092,7 @@ def import_example_ttl():
 @app.route('/api/import/csv', methods=['POST'])
 def import_csv():
     """Import a CSV file and convert to SHACL TTL"""
+    editor = get_user_editor()
     try:
         if 'file' not in request.files:
             return jsonify({"error": "No file part"}), 400
@@ -4115,6 +4238,7 @@ def import_csv():
 @app.route('/api/debug', methods=['GET'])
 def debug_api():
     """Debug endpoint to check app state"""
+    editor = get_user_editor()
     # Count nodes by type
     node_counts = {
         'total': len(editor.nodes),

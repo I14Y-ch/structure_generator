@@ -9,6 +9,8 @@ A web-based visual editor for creating SHACL shapes compatible with the Swiss I1
 - **Multilingual Support**: German, French, Italian, and English
 - **TTL Export**: Generates I14Y-compatible SHACL files for upload
 - **Project Management**: Save/load projects as JSON
+- **Multi-User Support**: Session-based isolation allowing concurrent users without workspace interference
+- **Automatic Cleanup**: Expired user sessions are automatically cleaned up to prevent memory leaks
 
 ## Quick Start
 
@@ -130,3 +132,8 @@ Generates TTL files following I14Y standards:
 - **I14Y API**: REST integration for concept search
 - **Export**: SHACL-compliant TTL with I14Y-specific formatting
 - **Production**: Gunicorn WSGI server for production deployment
+- **Multi-User Architecture**: Session-based user isolation with automatic cleanup
+  - Each user gets a unique session ID and isolated workspace
+  - Expired sessions (default: 2 hours inactivity) are automatically cleaned up
+  - Background cleanup thread runs every 30 minutes to free memory
+  - Concurrent users can work independently without interference
