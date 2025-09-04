@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, send_file, redirect
 import json
 import os
 import tempfile
@@ -11,8 +11,8 @@ from typing import Dict, List, Optional, Any, Tuple
 import csv
 import io
 from pathlib import Path
-from rdflib import Graph, Literal, Namespace, URIRef
-from rdflib.namespace import RDF, XSD, SH, OWL, RDFS
+from rdflib import Graph, Literal, Namespace, URIRef, BNode
+from rdflib.namespace import RDF, XSD, SH, OWL, RDFS, DCTERMS
 
 # Import CSV converter 
 from csv_converter import csv_to_ttl
@@ -831,11 +831,29 @@ def parse_cardinality(cardinality_str: str) -> Tuple[Optional[int], Optional[int
     # Default fallback
     return None, None
 
+def get_unique_lang_values(multilang_dict, sanitize_literal_func):
+    """Only keep one language per unique content value to avoid SHACL violations"""
+    seen_values = {}
+    unique_values = {}
+    for lang, value in multilang_dict.items():
+        if lang in ['de', 'fr', 'it', 'en'] and value:
+            cleaned_value = sanitize_literal_func(value)
+            if cleaned_value not in seen_values:
+                seen_values[cleaned_value] = lang
+                unique_values[lang] = value
+            # If content is identical, prefer 'de', then 'en', then others
+            elif seen_values[cleaned_value] not in ['de'] and lang in ['de']:
+                # Replace with German if we had a non-German version
+                old_lang = seen_values[cleaned_value]
+                if old_lang in unique_values:
+                    del unique_values[old_lang]
+                seen_values[cleaned_value] = lang
+                unique_values[lang] = value
+    return unique_values
+
 def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[str, Dict] = None) -> str:
     """Generate full TTL using the RDF-based approach directly"""
-    from rdflib import Graph, Literal, Namespace, URIRef, BNode
-    from rdflib.namespace import RDF, RDFS, XSD, DCTERMS, SH, OWL
-
+    
     # Find dataset node  
     dataset_node = None
     for node in nodes.values():
@@ -869,6 +887,42 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     g.bind("QB", QB)
     g.bind("i14y", i14y_ns)
 
+    # Global tracking to prevent duplicate language tags for the same URI and property
+    uri_lang_tracker = {}  # Format: {(uri, property, lang): content}
+    
+    def safe_add_multilingual_property(uri, property_type, content, lang):
+        """Safely add a multilingual property, preventing duplicates for same URI+property+lang"""
+        if not content or lang not in ['de', 'fr', 'it', 'en']:
+            return False
+            
+        # Sanitize content before using as key
+        sanitized_content = sanitize_literal(content)
+        key = (str(uri), str(property_type), lang)
+        
+        if key in uri_lang_tracker:
+            # Check if content is the same - if different, log a warning
+            existing_content = uri_lang_tracker[key]
+            if existing_content != sanitized_content:
+                print(f"WARNING: Different content for same URI+property+lang: {key}")
+                print(f"  Existing: {existing_content}")
+                print(f"  Attempted: {sanitized_content}")
+            return False
+        
+        # Add to graph and track
+        g.add((uri, property_type, Literal(sanitized_content, lang=lang)))
+        uri_lang_tracker[key] = sanitized_content
+        return True
+    
+    def safe_add_conforms_to(uri, concept):
+        """Safely add dcterms:conformsTo if concept has i14y_concept_uri"""
+        if hasattr(concept, 'i14y_concept_uri') and concept.i14y_concept_uri:
+            # Check if already exists to prevent duplicates
+            existing = list(g.triples((uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri))))
+            if not existing:
+                g.add((uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri)))
+                return True
+        return False
+
     # Helper functions
     def sanitize_literal(text: str) -> str:
         if text is None:
@@ -900,13 +954,13 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     ds_desc = sanitize_literal(dataset_node.description)
 
     # Add multilingual titles and descriptions (following I14Y pattern)
-    for lang in ['de', 'en', 'fr', 'it']:
-        if ds_title:
-            g.add((dataset_shape, DCTERMS.title, Literal(ds_title, lang=lang)))
-            g.add((dataset_shape, RDFS.label, Literal(ds_title, lang=lang)))
-        if ds_desc and lang == 'de':  # Primary language for description
-            g.add((dataset_shape, DCTERMS.description, Literal(ds_desc, lang=lang)))
-            g.add((dataset_shape, RDFS.comment, Literal(ds_desc, lang=lang)))
+    # Only add one language tag to avoid duplicates
+    if ds_title:
+        safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, 'de')
+        safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, 'de')
+    if ds_desc:  # Primary language for description
+        safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, 'de')
+        safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, 'de')
 
     # Add version and schema information (following I14Y pattern)
     PAV = Namespace("http://purl.org/pav/")
@@ -918,7 +972,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     g.add((dataset_shape, SCHEMA.version, Literal("1.0.0")))
     
     # Add current date as validFrom
-    from datetime import datetime
     current_date = datetime.now().strftime("%Y-%m-%d")
     g.add((dataset_shape, SCHEMA.validFrom, Literal(current_date, datatype=XSD.date)))
 
@@ -952,11 +1005,11 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         class_desc = sanitize_literal(class_node.description)
 
         if class_title:
-            g.add((class_uri, SH.name, Literal(class_title + "Type", lang="en")))
+            safe_add_multilingual_property(class_uri, SH.name, class_title + "Type", "en")
 
         if class_desc:
-            g.add((class_uri, DCTERMS.description, Literal(class_desc, lang="de")))
-            g.add((class_uri, RDFS.comment, Literal(class_desc, lang="de")))
+            safe_add_multilingual_property(class_uri, DCTERMS.description, class_desc, "de")
+            safe_add_multilingual_property(class_uri, RDFS.comment, class_desc, "de")
 
         # Collect concepts connected to this class
         class_concepts = []
@@ -987,8 +1040,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((property_uri, SH.datatype, XSD.string))  # Default to string
 
             # Add I14Y concept reference if available
-            if concept.i14y_concept_uri:
-                g.add((property_uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri)))
+            safe_add_conforms_to(property_uri, concept)
 
             # Add advanced SHACL constraints
             if concept.min_count is not None:
@@ -1037,17 +1089,20 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             titles = concept.get_multilingual_title()
             descriptions = concept.get_multilingual_description()
 
-            for lang, title in titles.items():
-                if title and lang in ['de', 'fr', 'it', 'en']:
-                    g.add((property_uri, DCTERMS.title, Literal(sanitize_literal(title), lang=lang)))
-                    g.add((property_uri, RDFS.label, Literal(sanitize_literal(title), lang=lang)))
-                    g.add((property_uri, SH.name, Literal(sanitize_literal(title), lang=lang)))
+            unique_titles = get_unique_lang_values(titles, sanitize_literal)
+            unique_descriptions = get_unique_lang_values(descriptions, sanitize_literal)
 
-            for lang, desc in descriptions.items():
-                if desc and lang in ['de', 'fr', 'it', 'en']:
-                    g.add((property_uri, DCTERMS.description, Literal(sanitize_literal(desc), lang=lang)))
-                    g.add((property_uri, RDFS.comment, Literal(sanitize_literal(desc), lang=lang)))
-                    g.add((property_uri, SH.description, Literal(sanitize_literal(desc), lang=lang)))
+            for lang, title in unique_titles.items():
+                sanitized_title = sanitize_literal(title)
+                safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+                safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+                safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
+
+            for lang, desc in unique_descriptions.items():
+                sanitized_desc = sanitize_literal(desc)
+                safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
+                safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
+                safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
 
             class_property_uris.append(property_uri)
 
@@ -1082,8 +1137,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
 
         # Add I14Y concept reference if available
-        if concept.i14y_concept_uri:
-            g.add((property_uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri)))
+        safe_add_conforms_to(property_uri, concept)
 
         # Add advanced SHACL constraints
         if concept.min_count is not None:
@@ -1132,17 +1186,33 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         titles = concept.get_multilingual_title()
         descriptions = concept.get_multilingual_description()
 
-        for lang, title in titles.items():
-            if title and lang in ['de', 'fr', 'it', 'en']:
-                g.add((property_uri, DCTERMS.title, Literal(sanitize_literal(title), lang=lang)))
-                g.add((property_uri, RDFS.label, Literal(sanitize_literal(title), lang=lang)))
-                g.add((property_uri, SH.name, Literal(sanitize_literal(title), lang=lang)))
+        unique_titles = get_unique_lang_values(titles, sanitize_literal)
+        unique_descriptions = get_unique_lang_values(descriptions, sanitize_literal)
 
-        for lang, desc in descriptions.items():
-            if desc and lang in ['de', 'fr', 'it', 'en']:
-                g.add((property_uri, DCTERMS.description, Literal(sanitize_literal(desc), lang=lang)))
-                g.add((property_uri, RDFS.comment, Literal(sanitize_literal(desc), lang=lang)))
-                g.add((property_uri, SH.description, Literal(sanitize_literal(desc), lang=lang)))
+        for lang, title in unique_titles.items():
+            sanitized_title = sanitize_literal(title)
+            safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
+
+        for lang, desc in unique_descriptions.items():
+            sanitized_desc = sanitize_literal(desc)
+            safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
+            safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
+            safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
+
+        # Add multilingual titles and labels for the class property reference
+        titles = class_node.get_multilingual_title() if hasattr(class_node, 'get_multilingual_title') else {}
+        # fallback: use class_node.title for all languages if no multilingual
+        if not titles or not any(titles.values()):
+            titles = {lang: class_node.title for lang in ['de', 'fr', 'it', 'en']}
+        
+        unique_titles = get_unique_lang_values(titles, sanitize_literal)
+        for lang, title in unique_titles.items():
+            sanitized_title = sanitize_literal(title)
+            safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
@@ -1169,6 +1239,19 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         # Link to the class NodeShape using sh:node (recommended for I14Y)
         g.add((property_uri, SH.node, class_uri))
+
+        # Add multilingual titles and labels for the class property reference
+        titles = class_node.get_multilingual_title() if hasattr(class_node, 'get_multilingual_title') else {}
+        # fallback: use class_node.title for all languages if no multilingual
+        if not titles or not any(titles.values()):
+            titles = {lang: class_node.title for lang in ['de', 'fr', 'it', 'en']}
+        
+        unique_titles = get_unique_lang_values(titles, sanitize_literal)
+        for lang, title in unique_titles.items():
+            sanitized_title = sanitize_literal(title)
+            safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
@@ -1580,9 +1663,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     
     def generate_ttl(self) -> str:
         """Generate TTL content from the current graph in I14Y format using RDF graph approach"""
-        from rdflib import Graph, Literal, Namespace, URIRef, BNode
-        from rdflib.namespace import RDF, RDFS, XSD, DCTERMS, SH, OWL
-
         # Find dataset node
         dataset_node = None
         for node in self.nodes.values():
@@ -1611,6 +1691,24 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.bind("owl", OWL)
         g.bind("QB", QB)
         g.bind("i14y", i14y_ns)
+
+        # Global tracking to prevent duplicate language tags for the same URI and property
+        uri_lang_tracker = {}  # Format: {(uri, property, lang): content}
+        
+        def safe_add_multilingual_property(uri, property_type, content, lang):
+            """Safely add a multilingual property, preventing duplicates for same URI+property+lang"""
+            if not content or lang not in ['de', 'fr', 'it', 'en']:
+                return False
+                
+            key = (str(uri), str(property_type), lang)
+            if key in uri_lang_tracker:
+                # Already exists for this URI+property+language - skip
+                return False
+            
+            # Add to graph and track
+            g.add((uri, property_type, Literal(content, lang=lang)))
+            uri_lang_tracker[key] = content
+            return True
 
         # Helper functions
         def sanitize_literal(text: str) -> str:
@@ -1644,13 +1742,13 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         ds_desc = sanitize_literal(dataset_node.description)
 
         if ds_title:
-            g.add((dataset_shape, DCTERMS.title, Literal(ds_title, lang="de")))
-            g.add((dataset_shape, RDFS.label, Literal(ds_title, lang="de")))
-            g.add((dataset_shape, SH.name, Literal(ds_title, lang="de")))
+            safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, "de")
+            safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, "de")
+            safe_add_multilingual_property(dataset_shape, SH.name, ds_title, "de")
 
         if ds_desc:
-            g.add((dataset_shape, DCTERMS.description, Literal(ds_desc, lang="de")))
-            g.add((dataset_shape, RDFS.comment, Literal(ds_desc, lang="de")))
+            safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, "de")
+            safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, "de")
             g.add((dataset_shape, SH.description, Literal(ds_desc, lang="de")))
 
         # Collect concepts and classes connected to dataset
@@ -1682,8 +1780,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
 
             # Add I14Y concept reference if available
-            if concept.i14y_concept_uri:
-                g.add((property_uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri)))
+            safe_add_conforms_to(property_uri, concept)
 
             # Add advanced SHACL constraints
             if concept.min_count is not None:
@@ -1733,15 +1830,20 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
             for lang, title in titles.items():
                 if title and lang in ['de', 'fr', 'it', 'en']:
-                    g.add((property_uri, DCTERMS.title, Literal(sanitize_literal(title), lang=lang)))
-                    g.add((property_uri, RDFS.label, Literal(sanitize_literal(title), lang=lang)))
-                    g.add((property_uri, SH.name, Literal(sanitize_literal(title), lang=lang)))
+                    # Use safe method to prevent duplicates
+                    sanitized_title = sanitize_literal(title)
+                    safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+                    safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+                    safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
 
             for lang, desc in descriptions.items():
+                # Only add the first value per language for each property
                 if desc and lang in ['de', 'fr', 'it', 'en']:
-                    g.add((property_uri, DCTERMS.description, Literal(sanitize_literal(desc), lang=lang)))
-                    g.add((property_uri, RDFS.comment, Literal(sanitize_literal(desc), lang=lang)))
-                    g.add((property_uri, SH.description, Literal(sanitize_literal(desc), lang=lang)))
+                    sanitized_desc = sanitize_literal(desc)
+                    # Use safe method to prevent duplicates
+                    safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
+                    safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
+                    safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
 
             # Add to dataset properties
             g.add((dataset_shape, SH.property, property_uri))
@@ -1777,21 +1879,29 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             class_title = sanitize_literal(class_node.title)
             if class_title:
                 # Add basic German label as fallback (required for I14Y visualization)
-                g.add((property_uri, RDFS.label, Literal(class_title, lang="de")))
-                g.add((property_uri, DCTERMS.title, Literal(class_title, lang="de")))
-                g.add((property_uri, SH.name, Literal(class_title, lang="de")))
+                safe_add_multilingual_property(property_uri, RDFS.label, class_title, "de")
+                safe_add_multilingual_property(property_uri, DCTERMS.title, class_title, "de")
+                safe_add_multilingual_property(property_uri, SH.name, class_title, "de")
 
-            for lang, title in titles.items():
+            # Filter out duplicate content across languages
+            unique_titles = get_unique_lang_values(titles, sanitize_literal)
+            unique_descriptions = get_unique_lang_values(descriptions, sanitize_literal)
+
+            for lang, title in unique_titles.items():
                 if title and lang in ['de', 'fr', 'it', 'en']:
-                    g.add((property_uri, DCTERMS.title, Literal(sanitize_literal(title), lang=lang)))
-                    g.add((property_uri, RDFS.label, Literal(sanitize_literal(title), lang=lang)))
-                    g.add((property_uri, SH.name, Literal(sanitize_literal(title), lang=lang)))
+                    # Use safe method to prevent duplicates
+                    sanitized_title = sanitize_literal(title)
+                    safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+                    safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+                    safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
 
-            for lang, desc in descriptions.items():
+            for lang, desc in unique_descriptions.items():
                 if desc and lang in ['de', 'fr', 'it', 'en']:
-                    g.add((property_uri, DCTERMS.description, Literal(sanitize_literal(desc), lang=lang)))
-                    g.add((property_uri, RDFS.comment, Literal(sanitize_literal(desc), lang=lang)))
-                    g.add((property_uri, SH.description, Literal(sanitize_literal(desc), lang=lang)))
+                    # Use safe_add_multilingual_property instead of direct addition
+                    sanitized_desc = sanitize_literal(desc)
+                    safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
+                    safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
+                    safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
 
             # Find concepts and classes connected to this class
             connected_class_concepts = []
@@ -1818,8 +1928,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((concept_property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
 
                 # Add I14Y concept reference if available
-                if concept.i14y_concept_uri:
-                    g.add((concept_property_uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri)))
+                safe_add_conforms_to(concept_property_uri, concept)
 
                 # Add advanced SHACL constraints
                 if concept.min_count is not None:
@@ -1869,15 +1978,19 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
                 for lang, title in titles.items():
                     if title and lang in ['de', 'fr', 'it', 'en']:
-                        g.add((concept_property_uri, DCTERMS.title, Literal(sanitize_literal(title), lang=lang)))
-                        g.add((concept_property_uri, RDFS.label, Literal(sanitize_literal(title), lang=lang)))
-                        g.add((concept_property_uri, SH.name, Literal(sanitize_literal(title), lang=lang)))
+                        # Use safe method to prevent duplicates
+                        sanitized_title = sanitize_literal(title)
+                        safe_add_multilingual_property(concept_property_uri, DCTERMS.title, sanitized_title, lang)
+                        safe_add_multilingual_property(concept_property_uri, RDFS.label, sanitized_title, lang)
+                        safe_add_multilingual_property(concept_property_uri, SH.name, sanitized_title, lang)
 
                 for lang, desc in descriptions.items():
                     if desc and lang in ['de', 'fr', 'it', 'en']:
-                        g.add((concept_property_uri, DCTERMS.description, Literal(sanitize_literal(desc), lang=lang)))
-                        g.add((concept_property_uri, RDFS.comment, Literal(sanitize_literal(desc), lang=lang)))
-                        g.add((concept_property_uri, SH.description, Literal(sanitize_literal(desc), lang=lang)))
+                        # Use safe method to prevent duplicates
+                        sanitized_desc = sanitize_literal(desc)
+                        safe_add_multilingual_property(concept_property_uri, DCTERMS.description, sanitized_desc, lang)
+                        safe_add_multilingual_property(concept_property_uri, RDFS.comment, sanitized_desc, lang)
+                        safe_add_multilingual_property(concept_property_uri, SH.description, sanitized_desc, lang)
 
                 # Add to class properties
                 g.add((class_uri, SH.property, concept_property_uri))
@@ -1921,12 +2034,12 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 relationship_title = f"has {connected_class.title}"
                 relationship_desc = f"Reference to {connected_class.title} instances"
 
-                g.add((class_ref_property_uri, DCTERMS.title, Literal(relationship_title, lang="de")))
-                g.add((class_ref_property_uri, RDFS.label, Literal(relationship_title, lang="de")))
-                g.add((class_ref_property_uri, SH.name, Literal(relationship_title, lang="de")))
-                g.add((class_ref_property_uri, DCTERMS.description, Literal(relationship_desc, lang="de")))
-                g.add((class_ref_property_uri, RDFS.comment, Literal(relationship_desc, lang="de")))
-                g.add((class_ref_property_uri, SH.description, Literal(relationship_desc, lang="de")))
+                safe_add_multilingual_property(class_ref_property_uri, DCTERMS.title, relationship_title, "de")
+                safe_add_multilingual_property(class_ref_property_uri, RDFS.label, relationship_title, "de")
+                safe_add_multilingual_property(class_ref_property_uri, SH.name, relationship_title, "de")
+                safe_add_multilingual_property(class_ref_property_uri, DCTERMS.description, relationship_desc, "de")
+                safe_add_multilingual_property(class_ref_property_uri, RDFS.comment, relationship_desc, "de")
+                safe_add_multilingual_property(class_ref_property_uri, SH.description, relationship_desc, "de")
 
                 # Add to class properties
                 g.add((class_uri, SH.property, class_ref_property_uri))
