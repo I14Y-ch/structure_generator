@@ -18,6 +18,7 @@ from rdflib.namespace import RDF, XSD, SH, OWL, RDFS, DCTERMS
 
 # Import CSV converter 
 from csv_converter import csv_to_ttl
+from xsd_importer import xsd_to_ttl
 
 class SessionManager:
     """Manages user sessions and automatic cleanup"""
@@ -669,7 +670,7 @@ class SHACLNode:
         
         # Set the concept URI for TTL export
         if self.i14y_id:
-            self.i14y_concept_uri = f"https://www.i14y.admin.ch/catalog/concepts/{self.i14y_id}/description"
+            self.i14y_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{self.i14y_id}/description"
         
         # Determine appropriate datatype based on concept metadata
         self._determine_datatype()
@@ -708,7 +709,7 @@ class SHACLNode:
         
         # Set the dataset URI for references
         if self.i14y_id:
-            self.i14y_dataset_uri = f"https://www.i14y.admin.ch/catalog/datasets/{self.i14y_id}/description"
+            self.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{self.i14y_id}/description"
     
     def _apply_i14y_constraints(self):
         """Apply SHACL constraints extracted from I14Y concept data"""
@@ -2977,6 +2978,118 @@ def update_constraints(node_id):
     
     return jsonify({"success": True})
 
+@app.route('/api/nodes/<node_id>/link-to-i14y', methods=['POST'])
+def link_node_to_i14y(node_id):
+    """Link an existing custom concept to an I14Y concept"""
+    editor = get_user_editor()
+    
+    if node_id not in editor.nodes:
+        return jsonify({"error": "Node not found"}), 404
+    
+    node = editor.nodes[node_id]
+    
+    # Only allow linking concepts
+    if node.type != 'concept':
+        return jsonify({"error": "Only concept nodes can be linked to I14Y"}), 400
+    
+    # Check if the node is already linked to I14Y
+    if node.i14y_id:
+        return jsonify({"error": "This concept is already linked to I14Y"}), 400
+    
+    data = request.json
+    concept_data = data.get('concept_data')
+    
+    if not concept_data:
+        return jsonify({"error": "I14Y concept data is required"}), 400
+    
+    try:
+        # Save existing constraints before updating
+        min_length = node.min_length
+        max_length = node.max_length
+        pattern = node.pattern
+        in_values = node.in_values
+        datatype = node.datatype
+        
+        # Update node with I14Y concept data
+        node.set_i14y_concept(concept_data)
+        
+        # Restore any existing constraints
+        if min_length is not None:
+            node.min_length = min_length
+        if max_length is not None:
+            node.max_length = max_length
+        if pattern:
+            node.pattern = pattern
+        if in_values:
+            node.in_values = in_values
+        if datatype:
+            node.datatype = datatype
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        import traceback
+        print(f"Error linking node to I14Y: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/nodes/<node_id>/disconnect-i14y', methods=['POST'])
+def disconnect_node_from_i14y(node_id):
+    """Disconnect a node from I14Y, converting it back to a custom concept"""
+    editor = get_user_editor()
+    
+    if node_id not in editor.nodes:
+        return jsonify({"error": "Node not found"}), 404
+    
+    node = editor.nodes[node_id]
+    
+    # Only allow disconnecting concepts
+    if node.type != 'concept':
+        return jsonify({"error": "Only concept nodes can be disconnected from I14Y"}), 400
+    
+    # Check if the node is actually linked to I14Y
+    if not node.i14y_id:
+        return jsonify({"error": "This concept is not linked to I14Y"}), 400
+    
+    try:
+        # Save title, description, and constraints before disconnecting
+        title = node.title
+        description = node.description
+        min_length = node.min_length
+        max_length = node.max_length
+        pattern = node.pattern
+        in_values = node.in_values
+        datatype = node.datatype
+        
+        # Clear I14Y specific data
+        node.i14y_id = None
+        node.i14y_data = None
+        
+        # Restore the title and description
+        node.title = title
+        node.description = description
+        
+        # Restore constraints
+        node.min_length = min_length
+        node.max_length = max_length
+        node.pattern = pattern
+        node.in_values = in_values
+        node.datatype = datatype
+        
+        return jsonify({
+            "success": True,
+            "node": {
+                "id": node.id,
+                "title": node.title,
+                "description": node.description,
+                "type": node.type
+            }
+        })
+    except Exception as e:
+        import traceback
+        print(f"Error disconnecting node from I14Y: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/nodes/<node_id>', methods=['PUT'])
 def update_node(node_id):
     """Update a node"""
@@ -3459,7 +3572,7 @@ def link_i14y_dataset():
         dataset_node.i14y_id = dataset_id
         
         # Set the I14Y dataset URI
-        dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/catalog/datasets/{dataset_id}/description"
+        dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{dataset_id}/description"
         
         print(f"Successfully linked dataset: {dataset_node.title} (ID: {dataset_id})")
         
@@ -4232,6 +4345,202 @@ def import_csv():
     except Exception as e:
         import traceback
         print(f"Error importing CSV: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/import/xsd', methods=['POST'])
+def import_xsd():
+    """Import an XSD file and convert to SHACL TTL"""
+    editor = get_user_editor()
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+            
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+            
+        if not file.filename.endswith('.xsd'):
+            return jsonify({"error": "Only XSD files are supported"}), 400
+            
+        # Get dataset name from form data
+        dataset_name = request.form.get('dataset_name', os.path.splitext(file.filename)[0])
+        
+        print(f"Importing XSD file: {file.filename}, Dataset name: {dataset_name}")
+        
+        # Read XSD data
+        xsd_data = file.read().decode('utf-8')
+        
+        # Convert to TTL
+        ttl = xsd_to_ttl(xsd_data, dataset_name)
+        
+        if not ttl:
+            return jsonify({"error": "Failed to convert XSD to TTL"}), 500
+            
+        print(f"Successfully converted XSD to TTL. Size: {len(ttl)} bytes")
+        
+        # Process the TTL to extract data structure
+        try:
+            # Use RDFLib to parse the TTL
+            g = Graph()
+            g.parse(data=ttl, format='turtle')
+            
+            # Clear existing nodes except for the dataset node
+            dataset_node = None
+            nodes_to_remove = []
+            
+            for node_id, node in editor.nodes.items():
+                if node.type == 'dataset':
+                    dataset_node = node
+                else:
+                    nodes_to_remove.append(node_id)
+            
+            # Remove non-dataset nodes
+            for node_id in nodes_to_remove:
+                del editor.nodes[node_id]
+            
+            # Clear edges
+            editor.edges = {}
+            
+            # Create or update dataset node with the provided name
+            if dataset_node:
+                dataset_node.title = dataset_name
+                dataset_node.description = f"Dataset imported from {file.filename}"
+                # Clear any existing connections
+                dataset_node.connections = set()
+            else:
+                dataset_node = SHACLNode('dataset', title=dataset_name, description=f"Dataset imported from {file.filename}")
+                editor.nodes[dataset_node.id] = dataset_node
+            
+            print(f"Using dataset node: {dataset_node.id} with title: {dataset_node.title}")
+            
+            # Track processed node shapes for edge creation
+            processed_nodes = {}
+            
+            # Find all NodeShapes (these become classes/concepts)
+            node_shapes = []
+            for s, p, o in g.triples((None, RDF.type, SH.NodeShape)):
+                node_shapes.append(s)
+            
+            print(f"Found {len(node_shapes)} node shapes in TTL")
+            
+            # Process each node shape
+            for shape_uri in node_shapes:
+                # Get node name (from sh:name or the URI)
+                node_name = None
+                for _, _, name in g.triples((shape_uri, SH.name, None)):
+                    node_name = str(name)
+                    break
+                
+                if not node_name:
+                    # Extract from URI
+                    node_name = str(shape_uri).split('/')[-1]
+                
+                # Get description
+                description = ""
+                for desc_prop in [SH.description, RDFS.comment, DCTERMS.description]:
+                    for _, _, desc in g.triples((shape_uri, desc_prop, None)):
+                        description = str(desc)
+                        break
+                    if description:
+                        break
+                
+                # Determine node type based on properties
+                # If it has a datatype, it's more like a concept
+                # Otherwise, it's a class
+                has_datatype = False
+                for _, _, _ in g.triples((shape_uri, SH.datatype, None)):
+                    has_datatype = True
+                    break
+                
+                # Create appropriate node
+                node_type = 'concept' if has_datatype else 'class'
+                shacl_node = SHACLNode(node_type, title=node_name, description=description)
+                
+                # Add datatype if present
+                if has_datatype:
+                    for _, _, dt in g.triples((shape_uri, SH.datatype, None)):
+                        shacl_node.datatype = str(dt)
+                        break
+                
+                # Add constraints for concepts
+                if node_type == 'concept':
+                    # Min/Max Length
+                    for _, _, value in g.triples((shape_uri, SH.minLength, None)):
+                        try:
+                            shacl_node.min_length = int(value)
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    for _, _, value in g.triples((shape_uri, SH.maxLength, None)):
+                        try:
+                            shacl_node.max_length = int(value)
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Pattern
+                    for _, _, value in g.triples((shape_uri, SH.pattern, None)):
+                        shacl_node.pattern = str(value)
+                
+                # Add to editor nodes
+                editor.nodes[shacl_node.id] = shacl_node
+                processed_nodes[str(shape_uri)] = shacl_node
+                
+                # Connect to dataset
+                edge_id = f"{dataset_node.id}-{shacl_node.id}"
+                editor.edges[edge_id] = {
+                    'id': edge_id,
+                    'from': dataset_node.id,
+                    'to': shacl_node.id,
+                    'cardinality': '1..1'
+                }
+                dataset_node.connections.add(shacl_node.id)
+                shacl_node.connections.add(dataset_node.id)
+                
+                print(f"Created {node_type} node {shacl_node.id} for shape {node_name}")
+            
+            # Process property shapes to establish connections between nodes
+            property_shapes = []
+            for s, p, o in g.triples((None, RDF.type, SH.PropertyShape)):
+                property_shapes.append(s)
+            
+            # Look for sh:node references to establish connections
+            for shape_uri in node_shapes:
+                if str(shape_uri) not in processed_nodes:
+                    continue
+                
+                source_node = processed_nodes[str(shape_uri)]
+                
+                # Find properties that reference other nodes
+                for _, _, prop_shape in g.triples((shape_uri, SH.property, None)):
+                    for _, _, target_shape in g.triples((prop_shape, SH.node, None)):
+                        if str(target_shape) in processed_nodes:
+                            target_node = processed_nodes[str(target_shape)]
+                            
+                            # Create edge between source and target
+                            edge_id = f"{source_node.id}-{target_node.id}"
+                            if edge_id not in editor.edges:
+                                editor.edges[edge_id] = {
+                                    'id': edge_id,
+                                    'from': source_node.id,
+                                    'to': target_node.id,
+                                    'cardinality': '1..1'
+                                }
+                                source_node.connections.add(target_node.id)
+                                target_node.connections.add(source_node.id)
+            
+            print(f"Successfully processed XSD. Created {len(processed_nodes)} nodes and {len(editor.edges)} edges.")
+        except Exception as e:
+            import traceback
+            print(f"Error processing TTL from XSD: {str(e)}")
+            print(traceback.format_exc())
+            # Continue with basic import even if advanced processing fails
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        import traceback
+        print(f"Error importing XSD: {str(e)}")
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
