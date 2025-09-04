@@ -106,6 +106,13 @@
                                 <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('csv-file').click()">Import</button>
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <strong class="small">XSD:</strong>
+                            <div class="d-flex gap-2 mt-1">
+                                <input type="file" id="xsd-file" accept=".xsd" style="display: none;" onchange="showXSDImportModal(this)">
+                                <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('xsd-file').click()">Import</button>
+                            </div>
+                        </div>
                         <div>
                             <strong class="small">Project:</strong>
                             <div class="d-flex gap-2 mt-1">
@@ -351,7 +358,39 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Link to I14Y Concept Modal -->
+    <div class="modal fade" id="linkToI14YModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Link Custom Concept to I14Y</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info mb-3">
+                        <small>
+                            <strong>Note:</strong> Linking this concept to an I14Y concept will replace its properties with the official I14Y values.
+                            Any custom constraints will be preserved.
+                        </small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="input-group">
+                            <input type="text" class="form-control" id="link-i14y-search-query" placeholder="Search I14Y concepts...">
+                            <button class="btn btn-outline-secondary" onclick="searchForI14YLink()">Search</button>
+                        </div>
+                    </div>
+                    <div id="link-i14y-results" style="max-height: 400px; overflow-y: auto;">
+                        <!-- Search results will be populated here -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- CSV Import Modal -->
     <div class="modal fade" id="csvImportModal" tabindex="-1">
         <div class="modal-dialog">
@@ -385,6 +424,35 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="importCSV()">Import</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- XSD Import Modal -->
+    <div class="modal fade" id="xsdImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Import XSD</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="xsd-dataset-name" class="form-label">Dataset Name:</label>
+                        <input type="text" class="form-control" id="xsd-dataset-name" value="Imported Dataset">
+                        <div class="form-text">This will be the title of your dataset</div>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>
+                            <strong>Note:</strong> The XSD file will be converted to SHACL shapes.
+                            Complex type definitions will be converted to class nodes, and simple types will be converted to concept nodes.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="importXSD()">Import</button>
                 </div>
             </div>
         </div>
@@ -788,7 +856,7 @@
                 if (node.type === 'concept') {
                     tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Concept ID: ${escapeHtml(node.i14y_id)}</small></div>`;
                 } else if (node.type === 'dataset') {
-                    tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Dataset ID: ${escapeHtml(node.i14y_id)}</small></div>`;
+                    tooltip += `<div style="margin-bottom: 5px; font-sixze: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Dataset ID: ${escapeHtml(node.i14y_id)}</small></div>`;
                 }
             }
             
@@ -985,9 +1053,9 @@
                     let i14yLink = '';
                     if (node.i14y_id) {
                         if (node.type === 'concept') {
-                            i14yLink = `<strong>I14Y:</strong> <a href="https://www.i14y.admin.ch/catalog/concepts/${node.i14y_id}/description" target="_blank" rel="noopener">View full concept description</a><br>`;
+                            i14yLink = `<strong>I14Y:</strong> <a href="https://www.i14y.admin.ch/de/catalog/concepts/${node.i14y_id}/description" target="_blank" rel="noopener">View full concept description</a><br>`;
                         } else if (node.type === 'dataset') {
-                            i14yLink = `<strong>I14Y:</strong> <a href="https://www.i14y.admin.ch/catalog/datasets/${node.i14y_id}/description" target="_blank" rel="noopener">View full dataset description</a><br>`;
+                            i14yLink = `<strong>I14Y:</strong> <a href="https://www.i14y.admin.ch/de/catalog/datasets/${node.i14y_id}/description" target="_blank" rel="noopener">View full dataset description</a><br>`;
                         }
                     }
 
@@ -1131,16 +1199,32 @@
                                     <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
                                 </div>
                                 <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
+                                <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showLinkToI14YModal()">Link to I14Y Concept</button>
                                 ${i14yLink}
                                 ${publisher}
                             `;
                         } else {
+                            // Prepare I14Y concept view link
+                            let i14yConceptButtons = '';
+                            if (node.i14y_id) {
+                                const conceptViewUrl = `https://www.i14y.admin.ch/de/catalog/concepts/${node.i14y_id}/description`;
+                                i14yConceptButtons = `
+                                <div class="mb-3 mt-2">
+                                    <p class="small text-success">✓ Linked to I14Y Concept</p>
+                                    <a href="${conceptViewUrl}" target="_blank" class="btn btn-sm btn-outline-success w-100 mb-2">
+                                        View on I14Y
+                                    </a>
+                                    <button class="btn btn-outline-danger btn-sm w-100" onclick="disconnectI14YConcept()">Disconnect from I14Y</button>
+                                </div>
+                                `;
+                            }
+                            
                             mainInfo = `
                                 <strong>Type:</strong> ${node.type}<br>
                                 <strong>Title:</strong> ${node.title}<br>
                                 <strong>Description:</strong> ${description}<br>
                                 <small class="text-muted">This ${node.type} is linked to I14Y and cannot be edited locally.</small><br>
-                                ${i14yLink}
+                                ${i14yConceptButtons}
                                 ${publisher}
                             `;
                         }
@@ -1450,6 +1534,135 @@
         }
 
         // Load additional datasets button
+        // Functions for linking custom concepts to I14Y
+        function showLinkToI14YModal() {
+            // This function will be called when the "Link to I14Y Concept" button is clicked
+            new bootstrap.Modal(document.getElementById('linkToI14YModal')).show();
+            searchForI14YLink(''); // Load initial results
+        }
+
+        // Global variable to store the latest link search results
+        let lastLinkI14YSearchResults = [];
+
+        function searchForI14YLink(query = null) {
+            if (query === null) {
+                query = document.getElementById('link-i14y-search-query').value;
+            }
+
+            const resultsDiv = document.getElementById('link-i14y-results');
+            resultsDiv.innerHTML = '<p class="text-muted">Searching...</p>';
+
+            fetch(`/api/i14y/search?query=${encodeURIComponent(query)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('I14Y search response for linking:', data);
+                    
+                    if (data.error) {
+                        resultsDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                        return;
+                    }
+                    
+                    // Store the search results globally for later use
+                    lastLinkI14YSearchResults = data.concepts || [];
+                    
+                    if (lastLinkI14YSearchResults.length > 0) {
+                        // Debug: Log the first concept structure to help identify field names
+                        console.log('First concept structure:', JSON.stringify(lastLinkI14YSearchResults[0], null, 2));
+                        console.log('Available title fields:', 
+                            lastLinkI14YSearchResults[0].title ? 'title' : 'no title',
+                            lastLinkI14YSearchResults[0].name ? 'name' : 'no name');
+                    }
+                    
+                    if (lastLinkI14YSearchResults.length === 0) {
+                        resultsDiv.innerHTML = '<p class="text-muted">No matching concepts found</p>';
+                        return;
+                    }
+                    
+                    // Display search results
+                    let resultsHTML = '<div class="list-group">';
+                    
+                    lastLinkI14YSearchResults.forEach((concept, index) => {
+                        // Get the title in preferred language order: de, en, fr, it
+                        const title = concept.title?.de || concept.title?.en || concept.title?.fr || concept.title?.it || 
+                                    concept.name?.de || concept.name?.en || concept.name?.fr || concept.name?.it || 'Unnamed Concept';
+                        
+                        // Get description snippet in preferred language order
+                        let description = concept.description?.de || concept.description?.en || concept.description?.fr || concept.description?.it || '';
+                        if (description.length > 100) {
+                            description = description.substring(0, 100) + '...';
+                        }
+                        
+                        // Label with language tag if available
+                        let labelLang = '';
+                        if (concept.title?.de || concept.name?.de) labelLang = '(de)';
+                        else if (concept.title?.en || concept.name?.en) labelLang = '(en)';
+                        else if (concept.title?.fr || concept.name?.fr) labelLang = '(fr)';
+                        else if (concept.title?.it || concept.name?.it) labelLang = '(it)';
+                        
+                        // Information line with source system and label language
+                        const infoLine = `<small class="text-muted">Source: ${concept.sourceSystem || 'I14Y'} ${labelLang}</small>`;
+                        
+                        resultsHTML += `
+                        <a href="#" class="list-group-item list-group-item-action" onclick="linkToI14YConcept('${concept.id}'); return false;">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${title}</h6>
+                            </div>
+                            <p class="mb-1 small">${description}</p>
+                            ${infoLine}
+                        </a>`;
+                    });
+                    
+                    resultsHTML += '</div>';
+                    resultsDiv.innerHTML = resultsHTML;
+                })
+                .catch(error => {
+                    console.error('Error searching I14Y:', error);
+                    resultsDiv.innerHTML = `<p class="text-danger">Error: ${error.message || 'Unknown error'}</p>`;
+                });
+        }
+
+        function linkToI14YConcept(conceptId) {
+            if (!selectedNodeId) {
+                alert('No concept selected. Please select a concept first.');
+                return;
+            }
+            
+            // Find the concept data in the search results
+            const conceptData = lastLinkI14YSearchResults.find(c => c.id === conceptId);
+            if (!conceptData) {
+                alert('Error: Concept data not found');
+                return;
+            }
+            
+            console.log('Linking node to I14Y concept:', conceptId, conceptData);
+            
+            // Call the API to link the concept
+            fetch(`/api/nodes/${selectedNodeId}/link-to-i14y`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ concept_data: conceptData })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Close the modal
+                    bootstrap.Modal.getInstance(document.getElementById('linkToI14YModal')).hide();
+                    
+                    // Reload the graph and update node details
+                    loadGraph();
+                    loadNodeDetails(selectedNodeId);
+                    
+                    alert('Concept successfully linked to I14Y!');
+                } else {
+                    alert('Error linking concept: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error linking to I14Y concept:', error);
+                alert('Error: ' + (error.message || 'Failed to link concept'));
+            });
+        }
+
         function showI14YDatasetSearchModal() {
             new bootstrap.Modal(document.getElementById('i14yDatasetSearchModal')).show();
             searchI14YDatasets(''); // Load initial results
@@ -1676,6 +1889,54 @@
             .catch(error => {
                 console.error('Error disconnecting dataset:', error);
                 alert(`Error disconnecting dataset: ${error.message}`);
+            });
+        }
+        
+        function disconnectI14YConcept() {
+            if (!selectedNodeId) {
+                alert('No concept selected');
+                return;
+            }
+            
+            console.log('Disconnecting concept from I14Y:', selectedNodeId);
+            
+            if (!confirm('Are you sure you want to disconnect this concept from I14Y? This will convert it to a custom concept that you can edit locally.')) {
+                return;
+            }
+            
+            // Send request to disconnect the concept
+            fetch(`/api/nodes/${selectedNodeId}/disconnect-i14y`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    console.error('Error disconnecting concept:', data.error);
+                    alert(`Error disconnecting concept: ${data.error}`);
+                    return;
+                }
+                
+                console.log('Concept disconnected successfully:', data);
+                
+                // Refresh the graph to show the updated concept node
+                // Force a timeout to ensure the backend has finished processing
+                setTimeout(() => {
+                    loadGraph();
+                    
+                    // Refresh the node details to show the unlinked concept
+                    loadNodeDetails(selectedNodeId);
+                    
+                    // Show success message
+                    showToast('Concept Disconnected', 'Successfully disconnected from I14Y concept. You can now edit this concept locally.');
+                }, 500);
+            })
+            .catch(error => {
+                console.error('Error disconnecting concept:', error);
+                alert(`Error disconnecting concept: ${error.message}`);
             });
         }
         
@@ -2071,6 +2332,76 @@
                 alert('Error importing CSV file');
                 document.getElementById('csv-file').value = '';
                 selectedCSVFile = null;
+            });
+        }
+        
+        let selectedXSDFile = null;
+        
+        function showXSDImportModal(input) {
+            if (!input.files || input.files.length === 0) return;
+            
+            selectedXSDFile = input.files[0];
+            
+            // Set the dataset name based on the file name (without extension)
+            const fileName = selectedXSDFile.name;
+            const nameWithoutExt = fileName.split('.').slice(0, -1).join('.');
+            document.getElementById('xsd-dataset-name').value = nameWithoutExt || 'Imported Dataset';
+            
+            // Show the modal
+            const xsdModal = new bootstrap.Modal(document.getElementById('xsdImportModal'));
+            xsdModal.show();
+        }
+        
+        function importXSD() {
+            if (!selectedXSDFile) {
+                alert('No XSD file selected');
+                return;
+            }
+            
+            const datasetName = document.getElementById('xsd-dataset-name').value;
+            
+            const formData = new FormData();
+            formData.append('file', selectedXSDFile);
+            formData.append('dataset_name', datasetName);
+            
+            // Show loading state
+            const importButton = document.querySelector('#xsdImportModal button.btn-primary');
+            const originalText = importButton.textContent;
+            importButton.textContent = 'Importing...';
+            importButton.disabled = true;
+            
+            fetch('/api/import/xsd', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Reset button state
+                importButton.textContent = originalText;
+                importButton.disabled = false;
+                
+                // Close the modal
+                bootstrap.Modal.getInstance(document.getElementById('xsdImportModal')).hide();
+                
+                if (data.success) {
+                    alert('XSD file imported successfully!');
+                    loadGraph();
+                } else {
+                    alert('Error importing XSD file: ' + (data.error || 'Unknown error'));
+                }
+                // Reset file input
+                document.getElementById('xsd-file').value = '';
+                selectedXSDFile = null;
+            })
+            .catch(error => {
+                // Reset button state
+                importButton.textContent = originalText;
+                importButton.disabled = false;
+                
+                console.error('Error:', error);
+                alert('Error importing XSD file');
+                document.getElementById('xsd-file').value = '';
+                selectedXSDFile = null;
             });
         }
 
