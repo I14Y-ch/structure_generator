@@ -1,0 +1,17 @@
+name: shacl-creator
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: I14Y-ch/structure_generator
+    branch: main
+  run_command: python app.py
+  environment_slug: python
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 8080
+  health_check:
+    http_path: /
+  envs:
+  - key: FLASK_ENV
+    value: production

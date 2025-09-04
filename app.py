@@ -4137,8 +4137,12 @@ def debug_api():
     })
 
 if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 5002))
+    debug = os.environ.get('FLASK_ENV') != 'production'
+    
     print("Starting SHACL Editor Web Application...")
-    print("Access the application at: http://localhost:5002")
+    print(f"Access the application at: http://localhost:{port}")
     print("Press Ctrl+C to stop the server")
     
-    app.run(debug=True, host='0.0.0.0', port=5002)
+    app.run(host='0.0.0.0', port=port, debug=debug)
