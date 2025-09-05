@@ -57,8 +57,7 @@
                     </div>
                     <div class="card-body">
                         <button class="btn btn-class btn-sm w-100 mb-2" onclick="showAddClassModal()">Class</button>
-                        <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showI14YSearchModal()">I14Y Concept</button>
-                        <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showAddConceptModal()">Own Concept</button>
+                        <button class="btn btn-data-element btn-sm w-100 mb-2" onclick="showAddDataElementModal()">Data Element</button>
                     </div>
                 </div>
 
@@ -91,28 +90,27 @@
                             <button class="btn btn-new-structure btn-sm w-100" onclick="createNewStructure()">New Structure</button>
                             <div class="small text-muted mt-1">Create a new empty structure</div>
                         </div>
-                        <div class="mb-3">
-                            <strong class="small">TTL (SHACL):</strong>
-                            <div class="d-flex gap-2 mt-1">
-                                <input type="file" id="ttl-file" accept=".ttl" style="display: none;" onchange="importTTL(this)">
-                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="document.getElementById('ttl-file').click()">Import</button>
-                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="exportTTL()">Export</button>
-                            </div>
+                        
+                        <!-- TTL Import/Export -->
+                        <div class="d-flex gap-2 mb-2">
+                            <input type="file" id="ttl-file" accept=".ttl" style="display: none;" onchange="importTTL(this)">
+                            <button class="btn btn-outline-dark btn-sm flex-fill" onclick="document.getElementById('ttl-file').click()">Import TTL</button>
+                            <button class="btn btn-outline-dark btn-sm flex-fill" onclick="exportTTL()">Export TTL</button>
                         </div>
-                        <div class="mb-3">
-                            <strong class="small">CSV:</strong>
-                            <div class="d-flex gap-2 mt-1">
-                                <input type="file" id="csv-file" accept=".csv" style="display: none;" onchange="showCSVImportModal(this)">
-                                <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('csv-file').click()">Import</button>
-                            </div>
+                        
+                        <!-- CSV Import -->
+                        <div class="mb-2">
+                            <input type="file" id="csv-file" accept=".csv" style="display: none;" onchange="showCSVImportModal(this)">
+                            <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('csv-file').click()">Import CSV</button>
                         </div>
+                        
+                        <!-- XSD Import -->
                         <div class="mb-3">
-                            <strong class="small">XSD:</strong>
-                            <div class="d-flex gap-2 mt-1">
-                                <input type="file" id="xsd-file" accept=".xsd" style="display: none;" onchange="showXSDImportModal(this)">
-                                <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('xsd-file').click()">Import</button>
-                            </div>
+                            <input type="file" id="xsd-file" accept=".xsd" style="display: none;" onchange="showXSDImportModal(this)">
+                            <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('xsd-file').click()">Import XSD</button>
                         </div>
+                        
+                        <!-- Project -->
                         <div>
                             <strong class="small">Project:</strong>
                             <div class="d-flex gap-2 mt-1">
@@ -255,27 +253,49 @@
     </div>
 
     <!-- Modals -->
-    <!-- Add Concept Modal -->
-    <div class="modal fade" id="addConceptModal" tabindex="-1">
+    <!-- Add Data Element Modal -->
+    <div class="modal fade" id="addDataElementModal" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add Custom Concept</h5>
+                    <h5 class="modal-title">Add Data Element</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="concept-title" class="form-label">Title:</label>
-                        <input type="text" class="form-control" id="concept-title" required>
+                        <label for="data-element-title" class="form-label">Local Name:</label>
+                        <input type="text" class="form-control" id="data-element-title" required 
+                               placeholder="Local name for this data element">
+                        <div class="form-text">This is the name used locally in your dataset</div>
                     </div>
                     <div class="mb-3">
-                        <label for="concept-description" class="form-label">Description:</label>
-                        <textarea class="form-control" id="concept-description" rows="3"></textarea>
+                        <label for="data-element-description" class="form-label">Description:</label>
+                        <textarea class="form-control" id="data-element-description" rows="3"
+                                  placeholder="Description of this data element"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Link to I14Y Concept (optional):</label>
+                        <div class="d-flex gap-2">
+                            <input type="text" class="form-control" id="data-element-concept-search" 
+                                   placeholder="Search I14Y concepts...">
+                            <button type="button" class="btn btn-outline-primary" onclick="searchConceptsForDataElement()">Search</button>
+                        </div>
+                        <div id="data-element-concept-results" class="mt-2" style="display: none;">
+                            <!-- Concept search results will appear here -->
+                        </div>
+                        <div id="data-element-selected-concept" class="mt-2" style="display: none;">
+                            <div class="alert alert-info">
+                                <strong>Selected Concept:</strong> <span id="selected-concept-name"></span><br>
+                                <small class="text-muted"><span id="selected-concept-publisher"></span></small><br>
+                                <small class="text-muted">ID: <span id="selected-concept-id"></span></small>
+                                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="clearSelectedConcept()">Clear</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="addConcept()">Add Concept</button>
+                    <button type="button" class="btn btn-primary" onclick="addDataElement()">Add Data Element</button>
                 </div>
             </div>
         </div>
@@ -718,6 +738,134 @@
             });
         }
 
+        function updateDataElementInfo() {
+            if (!selectedNodeId) {
+                alert('No node selected');
+                return;
+            }
+
+            const localName = document.getElementById('edit-data-element-local-name').value;
+            const description = document.getElementById('edit-data-element-description').value;
+
+            if (!localName.trim()) {
+                alert('Local name is required');
+                return;
+            }
+
+            fetch(`/api/data-elements/${selectedNodeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    local_name: localName.trim(),
+                    title: localName.trim(), // Keep title in sync with local_name
+                    description: description.trim() 
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Data element updated successfully!');
+                    loadGraph();
+                    // Reload the node details to show updated information
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                } else {
+                    alert('Error updating data element: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error updating data element:', error);
+                alert('Error updating data element: ' + error.message);
+            });
+        }
+
+        function unlinkDataElementFromConcept() {
+            if (!selectedNodeId) {
+                alert('No node selected');
+                return;
+            }
+
+            if (confirm('Are you sure you want to unlink this data element from its I14Y concept?')) {
+                fetch(`/api/data-elements/${selectedNodeId}/unlink-concept`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Data element unlinked from concept successfully!');
+                        loadGraph();
+                        // Reload the node details to show updated information
+                        if (selectedNodeId) {
+                            loadNodeDetails(selectedNodeId);
+                        }
+                    } else {
+                        alert('Error unlinking data element: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error unlinking data element:', error);
+                    alert('Error unlinking data element: ' + error.message);
+                });
+            }
+        }
+
+        function showLinkDataElementToConceptModal() {
+            // Reuse the existing I14Y search modal but filter for concepts only
+            document.getElementById('i14y-search-query').value = '';
+            document.getElementById('i14y-results').innerHTML = '';
+            
+            // Set a flag to know we're linking a data element
+            window.linkingDataElement = true;
+            
+            new bootstrap.Modal(document.getElementById('i14ySearchModal')).show();
+        }
+
+        function linkDataElementToConcept(conceptId) {
+            if (!selectedNodeId) {
+                alert('No data element selected');
+                return;
+            }
+
+            // Find the concept in the search results
+            const conceptFromSearch = lastI14YSearchResults.find(c => c.id === conceptId);
+            if (!conceptFromSearch) {
+                alert('Concept not found in search results');
+                return;
+            }
+
+            // Link the data element to the concept
+            fetch(`/api/data-elements/${selectedNodeId}/link-concept`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    concept_data: conceptFromSearch
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Data element linked to concept successfully!');
+                    
+                    // Clear the linking flag and close the modal
+                    window.linkingDataElement = false;
+                    bootstrap.Modal.getInstance(document.getElementById('i14ySearchModal')).hide();
+                    
+                    loadGraph();
+                    // Reload the node details to show updated information
+                    if (selectedNodeId) {
+                        loadNodeDetails(selectedNodeId);
+                    }
+                } else {
+                    alert('Error linking data element: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error linking data element:', error);
+                alert('Error linking data element: ' + error.message);
+            });
+        }
+
         // Function to completely reset the network visualization
         function forceNetworkReset() {
             console.log('Forcing complete network reset...');
@@ -1035,9 +1183,11 @@
         }
 
         function loadNodeDetails(nodeId) {
+            console.log('Loading node details for:', nodeId); // Debug log
             fetch(`/api/nodes/${nodeId}`)
                 .then(response => response.json())
                 .then(node => {
+                    console.log('Received node data:', node); // Debug log
                     // Show right sidebar and hide placeholder
                     document.getElementById('selected-node-section').style.display = 'block';
                     document.getElementById('no-node-selected').style.display = 'none';
@@ -1183,6 +1333,95 @@
                             ${i14yLink}
                             ${publisher}
                         `;
+                    } else if (node.type === 'data_element') {
+                        // For data element nodes, show comprehensive information
+                        console.log('Data element node data:', node); // Debug log
+                        
+                        let conceptLinkInfo = '';
+                        let conceptDetails = '';
+                        
+                        if (node.is_linked_to_concept && node.conforms_to_concept_uri) {
+                            console.log('Data element is linked to concept:', node.conforms_to_concept_uri); // Debug log
+                            console.log('I14Y data available:', node.i14y_data); // Debug log
+                            
+                            // Extract concept ID from URI for I14Y link
+                            const conceptId = node.conforms_to_concept_uri.split('/').slice(-2, -1)[0];
+                            
+                            // Show concept information if available from i14y_data
+                            if (node.i14y_data) {
+                                const conceptTitle = getMultilingualText(node.i14y_data.title || node.i14y_data.name) || 'Unknown Concept';
+                                const conceptPublisher = getMultilingualText(node.i14y_data.publisherName || node.i14y_data.publisher?.name) || 'Unknown Publisher';
+                                const conceptDescription = getMultilingualText(node.i14y_data.description) || 'No description available';
+                                const conceptType = node.i14y_data.conceptValueType || node.i14y_data.conceptType || 'Unknown Type';
+                                
+                                // Truncate description if too long
+                                let truncatedDescription = conceptDescription;
+                                const words = conceptDescription.split(' ');
+                                if (words.length > 20) {
+                                    truncatedDescription = words.slice(0, 20).join(' ') + '...';
+                                }
+                                
+                                conceptDetails = `
+                                    <div class="mb-3 p-3 border rounded bg-light">
+                                        <h6 class="text-primary mb-2">🔗 Linked I14Y Concept</h6>
+                                        <strong>Title:</strong> ${escapeHtml(conceptTitle)}<br>
+                                        <strong>Type:</strong> ${escapeHtml(conceptType)}<br>
+                                        <strong>Publisher:</strong> ${escapeHtml(conceptPublisher)}<br>
+                                        <strong>Description:</strong> <span class="small text-muted">${escapeHtml(truncatedDescription)}</span><br>
+                                        <strong>Concept ID:</strong> <code class="small">${escapeHtml(conceptId)}</code>
+                                    </div>
+                                `;
+                            } else {
+                                // Fallback when no i14y_data is available
+                                conceptDetails = `
+                                    <div class="mb-3 p-3 border rounded bg-light">
+                                        <h6 class="text-primary mb-2">🔗 Linked I14Y Concept</h6>
+                                        <strong>Concept ID:</strong> <code class="small">${escapeHtml(conceptId)}</code><br>
+                                        <small class="text-muted">Concept details not available locally</small>
+                                    </div>
+                                `;
+                            }
+                            
+                            conceptLinkInfo = `
+                                <div class="mb-3">
+                                    <div class="d-grid gap-2">
+                                        <a href="${node.conforms_to_concept_uri}" target="_blank" class="btn btn-outline-success btn-sm">
+                                            View on I14Y ↗
+                                        </a>
+                                        <button class="btn btn-outline-danger btn-sm" onclick="unlinkDataElementFromConcept()">
+                                            Detach from Concept
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            conceptLinkInfo = `
+                                <div class="mb-3">
+                                    <div class="d-grid">
+                                        <button class="btn btn-concept btn-sm" onclick="showLinkDataElementToConceptModal()">
+                                            Link to I14Y Concept
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                        
+                        // Build comprehensive data element information
+                        mainInfo = `
+                            <strong>Type:</strong> Data Element<br><br>
+                            ${conceptDetails}
+                            <div class="mb-3 mt-3">
+                                <label for="edit-data-element-local-name" class="form-label small">Local Name:</label>
+                                <input type="text" class="form-control form-control-sm" id="edit-data-element-local-name" value="${escapeHtml(node.local_name || node.title)}">
+                                <div class="form-text">Name used in your dataset</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit-data-element-description" class="form-label small">Description:</label>
+                                <textarea class="form-control form-control-sm" id="edit-data-element-description" rows="3">${escapeHtml(node.description || '')}</textarea>
+                            </div>
+                            <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDataElementInfo()">Update Data Element</button>
+                            ${conceptLinkInfo}
+                        `;
                     } else {
                         // For concept nodes, show editable fields if not linked to I14Y
                         const isI14YLinked = !!node.i14y_id;
@@ -1321,72 +1560,6 @@
             document.getElementById('datatype').value = '';
         }
 
-        function showAddConceptModal() {
-            new bootstrap.Modal(document.getElementById('addConceptModal')).show();
-        }
-
-        function addConcept() {
-            const title = document.getElementById('concept-title').value;
-            const description = document.getElementById('concept-description').value;
-
-            if (!title) {
-                alert('Title is required');
-                return;
-            }
-
-            // Determine if a class is selected
-            let parentId = null;
-            if (selectedNodeId) {
-                // Fetch node type to check if it's a class
-                fetch(`/api/nodes/${selectedNodeId}`)
-                    .then(response => response.json())
-                    .then(node => {
-                        if (node.type === 'class') {
-                            parentId = selectedNodeId;
-                        }
-                        fetch('/api/nodes', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                type: 'concept',
-                                title: title,
-                                description: description,
-                                parent_id: parentId
-                            })
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                bootstrap.Modal.getInstance(document.getElementById('addConceptModal')).hide();
-                                document.getElementById('concept-title').value = '';
-                                document.getElementById('concept-description').value = '';
-                                loadGraph();
-                            }
-                        });
-                    });
-            } else {
-                // No node selected, add to dataset (default)
-                fetch('/api/nodes', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type: 'concept',
-                        title: title,
-                        description: description
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        bootstrap.Modal.getInstance(document.getElementById('addConceptModal')).hide();
-                        document.getElementById('concept-title').value = '';
-                        document.getElementById('concept-description').value = '';
-                        loadGraph();
-                    }
-                });
-            }
-        }
-
         function createNewStructure() {
             if (confirm('Are you sure you want to create a new structure? All unsaved changes will be lost.')) {
                 console.log('Creating new structure and redirecting...');
@@ -1426,6 +1599,181 @@
                     loadGraph();
                 }
             });
+        }
+
+        // Global variable to store selected concept for data element
+        let selectedConceptForDataElement = null;
+
+        function showAddDataElementModal() {
+            // Clear previous state
+            document.getElementById('data-element-title').value = '';
+            document.getElementById('data-element-description').value = '';
+            document.getElementById('data-element-concept-search').value = '';
+            document.getElementById('data-element-concept-results').style.display = 'none';
+            document.getElementById('data-element-selected-concept').style.display = 'none';
+            selectedConceptForDataElement = null;
+            
+            // Clear the displayed concept information
+            document.getElementById('selected-concept-name').textContent = '';
+            document.getElementById('selected-concept-publisher').textContent = '';
+            document.getElementById('selected-concept-id').textContent = '';
+            
+            new bootstrap.Modal(document.getElementById('addDataElementModal')).show();
+        }
+
+        function searchConceptsForDataElement() {
+            const query = document.getElementById('data-element-concept-search').value;
+            if (!query) return;
+
+            const resultsDiv = document.getElementById('data-element-concept-results');
+            resultsDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Searching...</div>';
+            resultsDiv.style.display = 'block';
+
+            fetch(`/api/i14y/search?query=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(data => {
+                resultsDiv.innerHTML = '';
+                
+                // The API returns an object with concepts array
+                const concepts = data.concepts || [];
+                if (concepts.length === 0) {
+                    resultsDiv.innerHTML = '<div class="text-muted">No concepts found</div>';
+                    return;
+                }
+
+                concepts.forEach(concept => {
+                    // Handle multilingual fields properly
+                    const title = getMultilingualText(concept.title) || 'Untitled';
+                    const description = getMultilingualText(concept.description) || 'No description';
+                    
+                    const conceptDiv = document.createElement('div');
+                    conceptDiv.className = 'border p-2 mb-2 concept-result';
+                    conceptDiv.style.cursor = 'pointer';
+                    conceptDiv.innerHTML = `
+                        <strong>${escapeHtml(title)}</strong>
+                        <div class="small text-muted">${escapeHtml(description)}</div>
+                        <div class="small"><strong>ID:</strong> ${escapeHtml(concept.id)}</div>
+                    `;
+                    conceptDiv.onclick = () => selectConceptForDataElement(concept);
+                    resultsDiv.appendChild(conceptDiv);
+                });
+            })
+            .catch(error => {
+                resultsDiv.innerHTML = '<div class="text-danger">Error searching concepts</div>';
+                console.error('Error:', error);
+            });
+        }
+
+        function selectConceptForDataElement(concept) {
+            selectedConceptForDataElement = concept;
+            document.getElementById('data-element-concept-results').style.display = 'none';
+            
+            // Extract proper title using multilingual text function
+            const title = getMultilingualText(concept.title) || 'Untitled';
+            const publisher = getMultilingualText(concept.publisherName) || 'Unknown Publisher';
+            const conceptId = concept.id || 'Unknown ID';
+            
+            document.getElementById('selected-concept-name').textContent = title;
+            document.getElementById('selected-concept-publisher').textContent = `Publisher: ${publisher}`;
+            document.getElementById('selected-concept-id').textContent = conceptId;
+            
+            document.getElementById('data-element-selected-concept').style.display = 'block';
+        }
+
+        function clearSelectedConcept() {
+            selectedConceptForDataElement = null;
+            document.getElementById('data-element-selected-concept').style.display = 'none';
+            document.getElementById('data-element-concept-results').style.display = 'none';
+            
+            // Clear the displayed information
+            document.getElementById('selected-concept-name').textContent = '';
+            document.getElementById('selected-concept-publisher').textContent = '';
+            document.getElementById('selected-concept-id').textContent = '';
+        }
+
+        function addDataElement() {
+            const title = document.getElementById('data-element-title').value;
+            const description = document.getElementById('data-element-description').value;
+
+            if (!title) {
+                alert('Local name is required');
+                return;
+            }
+
+            // Determine if a class is selected as parent
+            let parentId = null;
+            if (selectedNodeId) {
+                // Fetch node type to check if it's a class
+                fetch(`/api/nodes/${selectedNodeId}`)
+                    .then(response => response.json())
+                    .then(node => {
+                        if (node.type === 'class') {
+                            parentId = selectedNodeId;
+                        }
+                        
+                        const payload = {
+                            type: 'data_element',
+                            title: title,
+                            description: description,
+                            local_name: title,
+                            parent_id: parentId
+                        };
+
+                        // If a concept is selected, include it
+                        if (selectedConceptForDataElement) {
+                            payload.concept_data = selectedConceptForDataElement;
+                        }
+
+                        fetch('/api/data-elements', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                bootstrap.Modal.getInstance(document.getElementById('addDataElementModal')).hide();
+                                loadGraph();
+                            } else {
+                                alert('Error creating data element: ' + (data.error || 'Unknown error'));
+                            }
+                        })
+                        .catch(error => {
+                            alert('Error creating data element: ' + error.message);
+                        });
+                    });
+            } else {
+                // No parent selected
+                const payload = {
+                    type: 'data_element',
+                    title: title,
+                    description: description,
+                    local_name: title
+                };
+
+                // If a concept is selected, include it
+                if (selectedConceptForDataElement) {
+                    payload.concept_data = selectedConceptForDataElement;
+                }
+
+                fetch('/api/data-elements', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('addDataElementModal')).hide();
+                        loadGraph();
+                    } else {
+                        alert('Error creating data element: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    alert('Error creating data element: ' + error.message);
+                });
+            }
         }
 
         function removeSelected() {
@@ -1940,11 +2288,6 @@
             });
         }
         
-        function showI14YSearchModal() {
-            new bootstrap.Modal(document.getElementById('i14ySearchModal')).show();
-            searchI14Y(''); // Load initial results
-        }
-
         // Global variable to store the latest search results
         let lastI14YSearchResults = [];
 
@@ -1993,9 +2336,12 @@
                                         <p class="card-text"><small class="text-muted">Publisher: ${escapeHtml(publisher)}</small></p>
                                         <p class="card-text"><small class="text-muted">Type: ${concept.conceptValueType || concept.type || 'Concept'}</small></p>
                                         <p class="card-text"><small class="text-muted">ID: ${safeConceptId}</small></p>
-                                        <button class="btn btn-primary btn-sm" onclick="addI14YConceptById('${safeConceptId}')">
-                                            Add Concept
-                                        </button>
+                                        ${window.linkingDataElement ? 
+                                            `<button class="btn btn-primary btn-sm" onclick="linkDataElementToConcept('${safeConceptId}')">
+                                                Link to Data Element
+                                            </button>` :
+                                            `<div class="text-muted small">Use "Link to I14Y Concept" from data elements</div>`
+                                        }
                                     </div>
                                 </div>
                             `;
@@ -2065,127 +2411,6 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-        
-        // Function to add concept by ID - This avoids the JSON parsing issue
-        function addI14YConceptById(conceptId) {
-            console.log('Adding I14Y concept with ID:', conceptId);
-            
-            // Find the concept in the last search results
-            const conceptFromSearch = lastI14YSearchResults.find(c => c.id === conceptId);
-            
-            // First try to get the concept from I14Y API
-            fetch(`/api/i14y/concept/${conceptId}`)
-                .then(response => {
-                    if (!response.ok) {
-                        // If API returns an error, use the concept from search results
-                        console.log('API returned error, using concept from search results');
-                        if (conceptFromSearch) {
-                            console.log('Found concept in search results:', conceptFromSearch);
-                            addI14YConceptWithData(conceptId, conceptFromSearch);
-                        } else {
-                            console.error('Concept not found in search results');
-                            alert('Error: Concept not found');
-                        }
-                        throw new Error('API error');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success && data.concept) {
-                        console.log('Got concept data from API:', data.concept);
-                        addI14YConceptWithData(conceptId, data.concept);
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching concept:', error);
-                    // Error already handled above
-                });
-        }
-        
-        function addI14YConceptWithData(conceptId, conceptData) {
-            console.log('Adding I14Y concept with data:', conceptData);
-            
-            // Make sure we have valid concept data
-            if (!conceptData || typeof conceptData !== 'object') {
-                console.error('Invalid concept data:', conceptData);
-                alert('Error: Invalid concept data');
-                return;
-            }
-            
-            // Determine if a class is selected
-            let parentId = null;
-            if (selectedNodeId) {
-                console.log('Node selected, checking if it is a class:', selectedNodeId);
-                fetch(`/api/nodes/${selectedNodeId}`)
-                    .then(response => response.json())
-                    .then(node => {
-                        console.log('Selected node data:', node);
-                        if (node.type === 'class') {
-                            parentId = selectedNodeId;
-                            console.log('Parent is a class, setting parentId:', parentId);
-                        }
-                        console.log('Sending POST request to /api/i14y/add with parentId:', parentId);
-                        fetch('/api/i14y/add', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ concept_data: conceptData, parent_id: parentId })
-                        })
-                        .then(response => {
-                            console.log('Response from /api/i14y/add:', response);
-                            return response.json();
-                        })
-                        .then(data => {
-                            console.log('Parsed response data:', data);
-                            if (data.success) {
-                                bootstrap.Modal.getInstance(document.getElementById('i14ySearchModal')).hide();
-                                console.log('Success adding concept, loading graph...');
-                                loadGraph();
-                                // If the newly added concept is selected, refresh its details to show constraints
-                                if (data.node_id && selectedNodeId === data.node_id) {
-                                    loadNodeDetails(data.node_id);
-                                }
-                            } else {
-                                console.error('Error from server:', data.error);
-                                alert('Error adding I14Y concept: ' + (data.error || 'Unknown error'));
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error:', error);
-                            alert('Error adding I14Y concept');
-                        });
-                    });
-            } else {
-                console.log('No node selected, adding concept directly');
-                fetch('/api/i14y/add', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ concept_data: conceptData })
-                })
-                .then(response => {
-                    console.log('Response from /api/i14y/add:', response);
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Parsed response data:', data);
-                    if (data.success) {
-                        bootstrap.Modal.getInstance(document.getElementById('i14ySearchModal')).hide();
-                        console.log('Success adding concept, loading graph...');
-                        loadGraph();
-                        // If the newly added concept is selected, refresh its details to show constraints
-                        if (data.node_id && selectedNodeId === data.node_id) {
-                            loadNodeDetails(data.node_id);
-                        }
-                    } else {
-                        console.error('Error from server:', data.error);
-                        alert('Error adding I14Y concept: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error adding I14Y concept');
-                });
-            }
         }
 
         function exportTTL() {
@@ -2646,6 +2871,14 @@
                     searchI14YDatasets();
                 }
             });
+            
+            // Add event listener for I14Y search modal close to clear data element linking flag
+            const i14yModal = document.getElementById('i14ySearchModal');
+            if (i14yModal) {
+                i14yModal.addEventListener('hidden.bs.modal', function() {
+                    window.linkingDataElement = false;
+                });
+            }
         });        // Handle cardinality dropdown change
         document.getElementById('edge-cardinality').addEventListener('change', function(e) {
             const customSection = document.getElementById('custom-cardinality-section');

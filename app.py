@@ -593,13 +593,22 @@ class SHACLNode:
     
     def __init__(self, node_type: str, node_id: str = None, title: str = "", description: str = ""):
         self.id = node_id or str(uuid.uuid4())
-        self.type = node_type  # 'dataset', 'concept', 'class'
+        self.type = node_type  # 'dataset', 'data_element', 'concept', 'class'
         self.title = title
         self.description = description
+        
+        # I14Y integration
         self.i14y_id = None  # For concepts from I14Y (the concept UUID)
         self.i14y_data = None  # Full I14Y concept/dataset data
         self.i14y_concept_uri = None  # The I14Y concept URI
         self.i14y_dataset_uri = None  # The I14Y dataset URI
+        
+        # Data element specific properties
+        self.local_name = None  # Local name for the data element (can differ from concept name)
+        self.conforms_to_concept_uri = None  # dcterms:conformsTo link to underlying concept
+        self.is_linked_to_concept = False  # Whether this data element is linked to an I14Y concept
+        
+        # Graph structure
         self.connections = set()
         self.property_order = None  # For ordering in TTL export
         self.datatype = "xsd:string"  # Default datatype for concepts
@@ -614,6 +623,44 @@ class SHACLNode:
         self.node_reference = None  # sh:node class reference
         self.xone_groups = []  # sh:xone exclusive groups
         self.range = None  # rdfs:range
+    
+    def create_data_element_from_concept(self, concept_node, local_name: str = None):
+        """Create a data element from this concept node
+        
+        Args:
+            concept_node: The concept node to base the data element on
+            local_name: Optional local name for the data element (different from concept name)
+        
+        Returns:
+            New data element node
+        """
+        if concept_node.type != 'concept':
+            raise ValueError("Can only create data elements from concept nodes")
+        
+        # Create new data element
+        data_element = SHACLNode('data_element')
+        
+        # Set local name or inherit from concept
+        data_element.local_name = local_name or concept_node.title
+        data_element.title = data_element.local_name
+        data_element.description = concept_node.description
+        
+        # Link to concept via conformsTo
+        data_element.is_linked_to_concept = True
+        data_element.conforms_to_concept_uri = concept_node.i14y_concept_uri or f"concept:{concept_node.id}"
+        
+        # Inherit constraints from concept
+        data_element.datatype = concept_node.datatype
+        data_element.min_length = concept_node.min_length
+        data_element.max_length = concept_node.max_length
+        data_element.pattern = concept_node.pattern
+        data_element.in_values = concept_node.in_values.copy() if concept_node.in_values else []
+        
+        # Copy I14Y reference information (but not the direct link)
+        if concept_node.i14y_data:
+            data_element.i14y_data = concept_node.i14y_data.copy()
+            
+        return data_element
     
     def set_i14y_concept(self, concept_data: Dict):
         """Set I14Y concept information from API response"""
@@ -837,6 +884,9 @@ class SHACLNode:
             'i14y_data': self.i14y_data,
             'i14y_concept_uri': self.i14y_concept_uri,
             'i14y_dataset_uri': self.i14y_dataset_uri,
+            'local_name': self.local_name,
+            'conforms_to_concept_uri': self.conforms_to_concept_uri,
+            'is_linked_to_concept': self.is_linked_to_concept,
             'connections': connections_list,
             'property_order': self.property_order,
             'datatype': self.datatype,
@@ -859,6 +909,9 @@ class SHACLNode:
         node.i14y_data = data.get('i14y_data')
         node.i14y_concept_uri = data.get('i14y_concept_uri')
         node.i14y_dataset_uri = data.get('i14y_dataset_uri')
+        node.local_name = data.get('local_name')
+        node.conforms_to_concept_uri = data.get('conforms_to_concept_uri')
+        node.is_linked_to_concept = data.get('is_linked_to_concept', False)
         node.connections = set(data.get('connections', []))
         node.property_order = data.get('property_order')
         node.datatype = data.get('datatype', 'xsd:string')
@@ -993,13 +1046,22 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         uri_lang_tracker[key] = sanitized_content
         return True
     
-    def safe_add_conforms_to(uri, concept):
-        """Safely add dcterms:conformsTo if concept has i14y_concept_uri"""
-        if hasattr(concept, 'i14y_concept_uri') and concept.i14y_concept_uri:
+    def safe_add_conforms_to(uri, node):
+        """Safely add dcterms:conformsTo if node has concept reference"""
+        conforms_to_uri = None
+        
+        # For data elements, use the conformsTo URI
+        if hasattr(node, 'conforms_to_concept_uri') and node.conforms_to_concept_uri:
+            conforms_to_uri = node.conforms_to_concept_uri
+        # For concepts with I14Y URI, use that
+        elif hasattr(node, 'i14y_concept_uri') and node.i14y_concept_uri:
+            conforms_to_uri = node.i14y_concept_uri
+            
+        if conforms_to_uri:
             # Check if already exists to prevent duplicates
-            existing = list(g.triples((uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri))))
+            existing = list(g.triples((uri, DCTERMS.conformsTo, URIRef(conforms_to_uri))))
             if not existing:
-                g.add((uri, DCTERMS.conformsTo, URIRef(concept.i14y_concept_uri)))
+                g.add((uri, DCTERMS.conformsTo, URIRef(conforms_to_uri)))
                 return True
         return False
 
@@ -1055,9 +1117,10 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     current_date = datetime.now().strftime("%Y-%m-%d")
     g.add((dataset_shape, SCHEMA.validFrom, Literal(current_date, datatype=XSD.date)))
 
-    # Collect concepts and classes connected to dataset
+    # Collect concepts, classes, and data elements connected to dataset
     connected_concepts = []
     connected_classes = []
+    connected_data_elements = []
 
     for conn_id in dataset_node.connections:
         if conn_id in nodes:
@@ -1066,6 +1129,8 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 connected_concepts.append(connected_node)
             elif connected_node.type == 'class':
                 connected_classes.append(connected_node)
+            elif connected_node.type == 'data_element':
+                connected_data_elements.append(connected_node)
 
     # First, create all class NodeShapes and collect their properties
     class_properties = {}  # Maps class_id to list of concept property URIs
@@ -1073,7 +1138,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
     for class_node in connected_classes:
         class_id = norm_id(class_node.title)
-        class_uri = URIRef(f"{i14y_ns}{class_id}Type")  # Following I14Y pattern with "Type" suffix
+        class_uri = URIRef(f"{i14y_ns}{class_id}")  # Use class name directly without "Type" suffix
 
         # Create NodeShape for the class
         g.add((class_uri, RDF.type, RDFS.Class))
@@ -1085,17 +1150,22 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         class_desc = sanitize_literal(class_node.description)
 
         if class_title:
-            safe_add_multilingual_property(class_uri, SH.name, class_title + "Type", "en")
+            safe_add_multilingual_property(class_uri, SH.name, class_title, "en")
 
         if class_desc:
             safe_add_multilingual_property(class_uri, DCTERMS.description, class_desc, "de")
             safe_add_multilingual_property(class_uri, RDFS.comment, class_desc, "de")
 
-        # Collect concepts connected to this class
+        # Collect concepts and data elements connected to this class
         class_concepts = []
+        class_data_elements = []
         for conn_id in class_node.connections:
-            if conn_id in nodes and nodes[conn_id].type == 'concept':
-                class_concepts.append(nodes[conn_id])
+            if conn_id in nodes:
+                connected_node = nodes[conn_id]
+                if connected_node.type == 'concept':
+                    class_concepts.append(connected_node)
+                elif connected_node.type == 'data_element':
+                    class_data_elements.append(connected_node)
 
         # Create property shapes for concepts belonging to this class
         class_property_uris = []
@@ -1183,6 +1253,92 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
                 safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
                 safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
+
+            class_property_uris.append(property_uri)
+
+        # Create property shapes for data elements belonging to this class
+        for data_element in class_data_elements:
+            element_id = norm_id(data_element.local_name or data_element.title)
+            # Use the full I14Y URI pattern 
+            property_uri = URIRef(f"{i14y_ns}{element_id}/{element_id}")
+
+            # Create PropertyShape
+            g.add((property_uri, RDF.type, SH.PropertyShape))
+            g.add((property_uri, RDF.type, OWL.DatatypeProperty))
+            g.add((property_uri, SH.path, property_uri))
+            
+            # Fix datatype syntax - use XSD namespace properly
+            if data_element.datatype:
+                if data_element.datatype.startswith('xsd:'):
+                    datatype_name = data_element.datatype.split(':')[1]
+                    g.add((property_uri, SH.datatype, getattr(XSD, datatype_name)))
+                else:
+                    g.add((property_uri, SH.datatype, URIRef(data_element.datatype)))
+            else:
+                g.add((property_uri, SH.datatype, XSD.string))  # Default to string
+
+            # Add I14Y concept reference if the data element is linked to a concept
+            safe_add_conforms_to(property_uri, data_element)
+
+            # Add advanced SHACL constraints
+            if data_element.min_count is not None:
+                g.add((property_uri, SH.minCount, Literal(data_element.min_count, datatype=XSD.integer)))
+            else:
+                g.add((property_uri, SH.minCount, Literal(1, datatype=XSD.integer)))  # Default minCount for data elements
+                
+            if data_element.max_count is not None:
+                g.add((property_uri, SH.maxCount, Literal(data_element.max_count, datatype=XSD.integer)))
+            if data_element.min_length is not None:
+                g.add((property_uri, SH.minLength, Literal(data_element.min_length, datatype=XSD.integer)))
+            if data_element.max_length is not None:
+                g.add((property_uri, SH.maxLength, Literal(data_element.max_length, datatype=XSD.integer)))
+            if data_element.pattern:
+                g.add((property_uri, SH.pattern, Literal(data_element.pattern)))
+            if data_element.range:
+                g.add((property_uri, RDFS.range, URIRef(data_element.range)))
+
+            # Add enumeration values (sh:in)
+            if data_element.in_values:
+                # Add QB:CodedProperty for enumerated values
+                g.add((property_uri, RDF.type, QB.CodedProperty))
+                
+                # Create RDF list for enumeration values using proper blank node references
+                list_items = []
+                for i, value in enumerate(data_element.in_values):
+                    blank_node = BNode(f"autos{rdf_list_counter}")
+                    list_items.append(blank_node)
+                    rdf_list_counter += 1
+                
+                # Build the list from end to beginning
+                if list_items:
+                    # Set the head for sh:in
+                    g.add((property_uri, SH['in'], list_items[0]))
+                    
+                    # Create the list structure
+                    for i, current in enumerate(list_items):
+                        g.add((current, RDF.first, Literal(data_element.in_values[i])))
+                        if i < len(list_items) - 1:
+                            g.add((current, RDF.rest, list_items[i + 1]))
+                        else:
+                            g.add((current, RDF.rest, RDF.nil))
+
+            # Add class reference (sh:node)
+            if data_element.node_reference:
+                g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
+
+            # Add multilingual titles and descriptions using local_name and description
+            element_title = data_element.local_name or data_element.title
+            element_desc = data_element.description
+            
+            if element_title:
+                safe_add_multilingual_property(property_uri, DCTERMS.title, element_title, "de")
+                safe_add_multilingual_property(property_uri, RDFS.label, element_title, "de")
+                safe_add_multilingual_property(property_uri, SH.name, element_title, "de")
+
+            if element_desc:
+                safe_add_multilingual_property(property_uri, DCTERMS.description, element_desc, "de")
+                safe_add_multilingual_property(property_uri, RDFS.comment, element_desc, "de")
+                safe_add_multilingual_property(property_uri, SH.description, element_desc, "de")
 
             class_property_uris.append(property_uri)
 
@@ -1281,18 +1437,94 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
             safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
 
-        # Add multilingual titles and labels for the class property reference
-        titles = class_node.get_multilingual_title() if hasattr(class_node, 'get_multilingual_title') else {}
-        # fallback: use class_node.title for all languages if no multilingual
-        if not titles or not any(titles.values()):
-            titles = {lang: class_node.title for lang in ['de', 'fr', 'it', 'en']}
+        # Add to dataset properties
+        g.add((dataset_shape, SH.property, property_uri))
+        property_order += 1
+
+    # Add property references for data elements directly connected to dataset
+    for data_element in connected_data_elements:
+        element_id = norm_id(data_element.local_name or data_element.title)
+        # Use the full I14Y URI pattern with dataset_id path
+        property_uri = URIRef(f"{i14y_ns}{dataset_id}/{element_id}")
+
+        # Create PropertyShape
+        g.add((property_uri, RDF.type, SH.PropertyShape))
+        g.add((property_uri, RDF.type, OWL.DatatypeProperty))
+        g.add((property_uri, SH.path, property_uri))
         
-        unique_titles = get_unique_lang_values(titles, sanitize_literal)
-        for lang, title in unique_titles.items():
-            sanitized_title = sanitize_literal(title)
-            safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
-            safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
-            safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
+        # Fix datatype syntax - use XSD namespace properly
+        if data_element.datatype:
+            if data_element.datatype.startswith('xsd:'):
+                datatype_name = data_element.datatype.split(':')[1]
+                g.add((property_uri, SH.datatype, getattr(XSD, datatype_name)))
+            else:
+                g.add((property_uri, SH.datatype, URIRef(data_element.datatype)))
+        else:
+            g.add((property_uri, SH.datatype, XSD.string))  # Default to string
+        g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
+
+        # Add I14Y concept reference if the data element is linked to a concept
+        safe_add_conforms_to(property_uri, data_element)
+
+        # Add advanced SHACL constraints
+        if data_element.min_count is not None:
+            g.add((property_uri, SH.minCount, Literal(data_element.min_count, datatype=XSD.integer)))
+        else:
+            g.add((property_uri, SH.minCount, Literal(1, datatype=XSD.integer)))  # Default minCount for data elements
+            
+        if data_element.max_count is not None:
+            g.add((property_uri, SH.maxCount, Literal(data_element.max_count, datatype=XSD.integer)))
+        if data_element.min_length is not None:
+            g.add((property_uri, SH.minLength, Literal(data_element.min_length, datatype=XSD.integer)))
+        if data_element.max_length is not None:
+            g.add((property_uri, SH.maxLength, Literal(data_element.max_length, datatype=XSD.integer)))
+        if data_element.pattern:
+            g.add((property_uri, SH.pattern, Literal(data_element.pattern)))
+        if data_element.range:
+            g.add((property_uri, RDFS.range, URIRef(data_element.range)))
+
+        # Add enumeration values (sh:in)
+        if data_element.in_values:
+            # Add QB:CodedProperty for enumerated values
+            g.add((property_uri, RDF.type, QB.CodedProperty))
+            
+            # Create RDF list for enumeration values using proper blank node references
+            list_items = []
+            for i, value in enumerate(data_element.in_values):
+                blank_node = BNode(f"autos{rdf_list_counter}")
+                list_items.append(blank_node)
+                rdf_list_counter += 1
+            
+            # Build the list from end to beginning
+            if list_items:
+                # Set the head for sh:in
+                g.add((property_uri, SH['in'], list_items[0]))
+                
+                # Create the list structure
+                for i, current in enumerate(list_items):
+                    g.add((current, RDF.first, Literal(data_element.in_values[i])))
+                    if i < len(list_items) - 1:
+                        g.add((current, RDF.rest, list_items[i + 1]))
+                    else:
+                        g.add((current, RDF.rest, RDF.nil))
+
+        # Add class reference (sh:node)
+        if data_element.node_reference:
+            g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
+
+        # Add multilingual titles and descriptions using local_name and description
+        element_title = data_element.local_name or data_element.title
+        element_desc = data_element.description
+        
+        if element_title:
+            safe_add_multilingual_property(property_uri, DCTERMS.title, element_title, "de")
+            safe_add_multilingual_property(property_uri, RDFS.label, element_title, "de")
+            safe_add_multilingual_property(property_uri, SH.name, element_title, "de")
+
+        if element_desc:
+            safe_add_multilingual_property(property_uri, DCTERMS.description, element_desc, "de")
+            safe_add_multilingual_property(property_uri, RDFS.comment, element_desc, "de")
+            safe_add_multilingual_property(property_uri, SH.description, element_desc, "de")
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
@@ -2723,12 +2955,19 @@ def get_graph():
             color = '#ff9999'  # Light red for dataset
         elif node.type == 'class':
             color = '#99ff99'  # Light green for classes
+        elif node.type == 'data_element':
+            if node.is_linked_to_concept:
+                color = '#ffcc99'  # Orange for data elements linked to concepts
+            else:
+                color = '#ccccff'  # Light purple for standalone data elements
             
         # Add node to nodes data
         # Get node type and publisher info
         node_type = 'Dataset'
         if node.type == 'class':
             node_type = 'Class'
+        elif node.type == 'data_element':
+            node_type = 'Data Element'
         elif node.type == 'concept':
             # For concepts, get more specific type information
             if node.datatype:
@@ -2823,6 +3062,150 @@ def get_nodes():
     editor = get_user_editor()
     return jsonify(editor.get_all_nodes())
 
+@app.route('/api/data-elements', methods=['POST'])
+def create_data_element():
+    """Create a data element from a concept or as standalone"""
+    editor = get_user_editor()
+    data = request.json
+    
+    concept_id = data.get('concept_id')
+    concept_data = data.get('concept_data')  # I14Y concept data for linking during creation
+    local_name = data.get('local_name')
+    parent_id = data.get('parent_id')
+    standalone = data.get('standalone', False)
+    
+    if not local_name:
+        return jsonify({"error": "Local name is required"}), 400
+    
+    try:
+        if concept_id and not standalone:
+            # Create data element from existing concept
+            if concept_id not in editor.nodes:
+                return jsonify({"error": "Concept not found"}), 404
+            
+            concept_node = editor.nodes[concept_id]
+            if concept_node.type != 'concept':
+                return jsonify({"error": "Referenced node is not a concept"}), 400
+            
+            # Create data element from concept
+            data_element = concept_node.create_data_element_from_concept(concept_node, local_name)
+        else:
+            # Create standalone data element
+            data_element = SHACLNode('data_element', title=local_name)
+            data_element.local_name = local_name
+            data_element.description = data.get('description', '')
+            data_element.datatype = data.get('datatype', 'xsd:string')
+            
+            # If concept_data is provided, link to I14Y concept during creation
+            if concept_data:
+                concept_id_from_data = concept_data.get('id')
+                if concept_id_from_data:
+                    data_element.conforms_to_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{concept_id_from_data}/description"
+                    data_element.is_linked_to_concept = True
+                    data_element.i14y_data = concept_data
+        
+        # Add to editor
+        editor.nodes[data_element.id] = data_element
+        
+        # Connect to parent if specified
+        if parent_id and parent_id in editor.nodes:
+            # Add to connections sets
+            editor.nodes[parent_id].connections.add(data_element.id)
+            data_element.connections.add(parent_id)
+            
+            # Create an edge in the edge dictionary
+            edge_id = f"{parent_id}-{data_element.id}"
+            editor.edges[edge_id] = {
+                'id': edge_id,
+                'from': parent_id,
+                'to': data_element.id,
+                'cardinality': '1..1'
+            }
+        else:
+            # Connect to dataset node by default
+            dataset_node = None
+            for n_id, n in editor.nodes.items():
+                if n.type == 'dataset':
+                    dataset_node = n
+                    break
+            
+            if dataset_node:
+                dataset_node.connections.add(data_element.id)
+                data_element.connections.add(dataset_node.id)
+                
+                edge_id = f"{dataset_node.id}-{data_element.id}"
+                editor.edges[edge_id] = {
+                    'id': edge_id,
+                    'from': dataset_node.id,
+                    'to': data_element.id,
+                    'cardinality': '1..1'
+                }
+        
+        return jsonify({"success": True, "node_id": data_element.id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/data-elements/<data_element_id>/link-concept', methods=['POST'])
+def link_data_element_to_concept(data_element_id):
+    """Link a data element to an I14Y concept"""
+    editor = get_user_editor()
+    data = request.json
+    
+    if data_element_id not in editor.nodes:
+        return jsonify({"error": "Data element not found"}), 404
+    
+    data_element = editor.nodes[data_element_id]
+    if data_element.type != 'data_element':
+        return jsonify({"error": "Node is not a data element"}), 400
+    
+    concept_data = data.get('concept_data')
+    if not concept_data:
+        return jsonify({"error": "Concept data is required"}), 400
+    
+    try:
+        # Create concept URI for conformsTo
+        concept_id = concept_data.get('id')
+        if concept_id:
+            data_element.conforms_to_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{concept_id}/description"
+            data_element.is_linked_to_concept = True
+        
+        # Store I14Y data for reference (but don't make it a concept node)
+        data_element.i14y_data = concept_data
+        
+        # Apply constraints from concept
+        api_client = I14YAPIClient()
+        constraints = api_client.extract_constraints_from_concept(concept_data)
+        
+        if 'pattern' in constraints:
+            data_element.pattern = constraints['pattern']
+        if 'in_values' in constraints:
+            data_element.in_values = constraints['in_values']
+        if 'datatype' in constraints:
+            data_element.datatype = constraints['datatype']
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/data-elements/<data_element_id>/unlink-concept', methods=['POST'])
+def unlink_data_element_from_concept(data_element_id):
+    """Unlink a data element from its concept"""
+    editor = get_user_editor()
+    
+    if data_element_id not in editor.nodes:
+        return jsonify({"error": "Data element not found"}), 404
+    
+    data_element = editor.nodes[data_element_id]
+    if data_element.type != 'data_element':
+        return jsonify({"error": "Node is not a data element"}), 400
+    
+    # Clear concept link
+    data_element.conforms_to_concept_uri = None
+    data_element.is_linked_to_concept = False
+    data_element.i14y_data = None
+    
+    return jsonify({"success": True})
+
 @app.route('/api/nodes', methods=['POST'])
 def add_node():
     """Add a new node to the graph"""
@@ -2909,6 +3292,9 @@ def get_node(node_id):
         'i14y_data': node.i14y_data,
         'i14y_concept_uri': node.i14y_concept_uri,
         'i14y_dataset_uri': node.i14y_dataset_uri,
+        'local_name': node.local_name,
+        'is_linked_to_concept': node.is_linked_to_concept,
+        'conforms_to_concept_uri': node.conforms_to_concept_uri,
         'min_count': node.min_count,
         'max_count': node.max_count,
         'min_length': node.min_length, 

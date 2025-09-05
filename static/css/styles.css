@@ -90,6 +90,17 @@
     border-color: #88bbee;
 }
 
+.btn-data-element {
+    background-color: #ffcc99; /* Light orange for data elements */
+    border-color: #ffcc99;
+    color: #000;
+}
+
+.btn-data-element:hover {
+    background-color: #eebb88;
+    border-color: #eebb88;
+}
+
 .btn-dataset {
     background-color: #ff9999; /* Light red for dataset */
     border-color: #ff9999;
