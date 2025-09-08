@@ -640,9 +640,15 @@ class SHACLNode:
         # Create new data element
         data_element = SHACLNode('data_element')
         
-        # Set local name or inherit from concept
-        data_element.local_name = local_name or concept_node.title
-        data_element.title = data_element.local_name
+        # Set local name from provided value or from concept
+        # Keep the title distinct from local_name to allow custom titles
+        if local_name:
+            data_element.local_name = local_name
+            data_element.title = local_name  # Start with local_name as title, but allow modification
+        else:
+            data_element.local_name = concept_node.title
+            data_element.title = concept_node.title  # Start with concept title, but allow modification
+            
         data_element.description = concept_node.description
         
         # Link to concept via conformsTo
@@ -1280,18 +1286,37 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             # Add I14Y concept reference if the data element is linked to a concept
             safe_add_conforms_to(property_uri, data_element)
 
-            # Add advanced SHACL constraints
-            if data_element.min_count is not None:
-                g.add((property_uri, SH.minCount, Literal(data_element.min_count, datatype=XSD.integer)))
+            # Get cardinality from edge if available
+            edge_id = f"{class_node.id}-{data_element.id}"
+            min_count = None
+            max_count = None
+            
+            if edges and edge_id in edges:
+                cardinality = edges[edge_id].get('cardinality', '1..1')
+                min_count, max_count = parse_cardinality(cardinality)
             else:
-                g.add((property_uri, SH.minCount, Literal(1, datatype=XSD.integer)))  # Default minCount for data elements
+                # Try reverse edge
+                reverse_edge_id = f"{data_element.id}-{class_node.id}"
+                if edges and reverse_edge_id in edges:
+                    cardinality = edges[reverse_edge_id].get('cardinality', '1..1')
+                    min_count, max_count = parse_cardinality(cardinality)
+                else:
+                    # Fallback to node attributes
+                    min_count = data_element.min_count
+                    max_count = data_element.max_count
+                    
+            # Add cardinality constraints
+            if min_count is not None:
+                g.add((property_uri, SH.minCount, Literal(min_count)))
+            else:
+                g.add((property_uri, SH.minCount, Literal(1)))  # Default minCount for data elements
                 
-            if data_element.max_count is not None:
-                g.add((property_uri, SH.maxCount, Literal(data_element.max_count, datatype=XSD.integer)))
+            if max_count is not None:
+                g.add((property_uri, SH.maxCount, Literal(max_count)))
             if data_element.min_length is not None:
-                g.add((property_uri, SH.minLength, Literal(data_element.min_length, datatype=XSD.integer)))
+                g.add((property_uri, SH.minLength, Literal(data_element.min_length)))
             if data_element.max_length is not None:
-                g.add((property_uri, SH.maxLength, Literal(data_element.max_length, datatype=XSD.integer)))
+                g.add((property_uri, SH.maxLength, Literal(data_element.max_length)))
             if data_element.pattern:
                 g.add((property_uri, SH.pattern, Literal(data_element.pattern)))
             if data_element.range:
@@ -1327,7 +1352,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
 
             # Add multilingual titles and descriptions using local_name and description
-            element_title = data_element.local_name or data_element.title
+            element_title = data_element.title  # Use the custom title
             element_desc = data_element.description
             
             if element_title:
@@ -1370,20 +1395,20 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((property_uri, SH.datatype, URIRef(concept.datatype)))
         else:
             g.add((property_uri, SH.datatype, XSD.string))  # Default to string
-        g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
+        g.add((property_uri, SH.order, Literal(property_order)))
 
         # Add I14Y concept reference if available
         safe_add_conforms_to(property_uri, concept)
 
         # Add advanced SHACL constraints
         if concept.min_count is not None:
-            g.add((property_uri, SH.minCount, Literal(concept.min_count, datatype=XSD.integer)))
+            g.add((property_uri, SH.minCount, Literal(concept.min_count)))
         if concept.max_count is not None:
-            g.add((property_uri, SH.maxCount, Literal(concept.max_count, datatype=XSD.integer)))
+            g.add((property_uri, SH.maxCount, Literal(concept.max_count)))
         if concept.min_length is not None:
-            g.add((property_uri, SH.minLength, Literal(concept.min_length, datatype=XSD.integer)))
+            g.add((property_uri, SH.minLength, Literal(concept.min_length)))
         if concept.max_length is not None:
-            g.add((property_uri, SH.maxLength, Literal(concept.max_length, datatype=XSD.integer)))
+            g.add((property_uri, SH.maxLength, Literal(concept.max_length)))
         if concept.pattern:
             g.add((property_uri, SH.pattern, Literal(concept.pattern)))
         if concept.range:
@@ -1461,23 +1486,42 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((property_uri, SH.datatype, URIRef(data_element.datatype)))
         else:
             g.add((property_uri, SH.datatype, XSD.string))  # Default to string
-        g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
+        g.add((property_uri, SH.order, Literal(property_order)))
 
         # Add I14Y concept reference if the data element is linked to a concept
         safe_add_conforms_to(property_uri, data_element)
 
-        # Add advanced SHACL constraints
-        if data_element.min_count is not None:
-            g.add((property_uri, SH.minCount, Literal(data_element.min_count, datatype=XSD.integer)))
+        # Get cardinality from edge if available
+        edge_id = f"{dataset_node.id}-{data_element.id}"
+        min_count = None
+        max_count = None
+        
+        if edges and edge_id in edges:
+            cardinality = edges[edge_id].get('cardinality', '1..1')
+            min_count, max_count = parse_cardinality(cardinality)
         else:
-            g.add((property_uri, SH.minCount, Literal(1, datatype=XSD.integer)))  # Default minCount for data elements
+            # Try reverse edge
+            reverse_edge_id = f"{data_element.id}-{dataset_node.id}"
+            if edges and reverse_edge_id in edges:
+                cardinality = edges[reverse_edge_id].get('cardinality', '1..1')
+                min_count, max_count = parse_cardinality(cardinality)
+            else:
+                # Fallback to node attributes
+                min_count = data_element.min_count
+                max_count = data_element.max_count
+                
+        # Add cardinality constraints
+        if min_count is not None:
+            g.add((property_uri, SH.minCount, Literal(min_count)))
+        else:
+            g.add((property_uri, SH.minCount, Literal(1)))  # Default minCount for data elements
             
-        if data_element.max_count is not None:
-            g.add((property_uri, SH.maxCount, Literal(data_element.max_count, datatype=XSD.integer)))
+        if max_count is not None:
+            g.add((property_uri, SH.maxCount, Literal(max_count)))
         if data_element.min_length is not None:
-            g.add((property_uri, SH.minLength, Literal(data_element.min_length, datatype=XSD.integer)))
+            g.add((property_uri, SH.minLength, Literal(data_element.min_length)))
         if data_element.max_length is not None:
-            g.add((property_uri, SH.maxLength, Literal(data_element.max_length, datatype=XSD.integer)))
+            g.add((property_uri, SH.maxLength, Literal(data_element.max_length)))
         if data_element.pattern:
             g.add((property_uri, SH.pattern, Literal(data_element.pattern)))
         if data_element.range:
@@ -1512,8 +1556,8 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         if data_element.node_reference:
             g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
 
-        # Add multilingual titles and descriptions using local_name and description
-        element_title = data_element.local_name or data_element.title
+        # Add multilingual titles and descriptions using the custom title
+        element_title = data_element.title  # Use the custom title
         element_desc = data_element.description
         
         if element_title:
@@ -1541,13 +1585,20 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((property_uri, RDF.type, SH.PropertyShape))
         g.add((property_uri, RDF.type, OWL.ObjectProperty))
         g.add((property_uri, SH.path, property_uri))
-        g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
+        g.add((property_uri, SH.order, Literal(property_order)))
 
         # Add advanced SHACL constraints for classes
         if class_node.min_count is not None:
-            g.add((property_uri, SH.minCount, Literal(class_node.min_count, datatype=XSD.integer)))
+            g.add((property_uri, SH.minCount, Literal(class_node.min_count)))
+        else:
+            # Add default minCount 1 for class references to indicate 1:1 relationship
+            g.add((property_uri, SH.minCount, Literal(1)))
+            
         if class_node.max_count is not None:
-            g.add((property_uri, SH.maxCount, Literal(class_node.max_count, datatype=XSD.integer)))
+            g.add((property_uri, SH.maxCount, Literal(class_node.max_count)))
+        else:
+            # Add default maxCount 1 for class references to indicate 1:1 relationship
+            g.add((property_uri, SH.maxCount, Literal(1)))
 
         # Link to the class NodeShape using sh:node (recommended for I14Y)
         g.add((property_uri, SH.node, class_uri))
@@ -2172,13 +2223,20 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             g.add((property_uri, RDF.type, SH.PropertyShape))
             g.add((property_uri, RDF.type, OWL.ObjectProperty))
             g.add((property_uri, SH.path, property_uri))
-            g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
+            g.add((property_uri, SH.order, Literal(property_order)))
 
             # Add advanced SHACL constraints for classes
             if class_node.min_count is not None:
-                g.add((property_uri, SH.minCount, Literal(class_node.min_count, datatype=XSD.integer)))
+                g.add((property_uri, SH.minCount, Literal(class_node.min_count)))
+            else:
+                # Add default minCount 1 for class references to indicate 1:1 relationship
+                g.add((property_uri, SH.minCount, Literal(1)))
+                
             if class_node.max_count is not None:
-                g.add((property_uri, SH.maxCount, Literal(class_node.max_count, datatype=XSD.integer)))
+                g.add((property_uri, SH.maxCount, Literal(class_node.max_count)))
+            else:
+                # Add default maxCount 1 for class references to indicate 1:1 relationship
+                g.add((property_uri, SH.maxCount, Literal(1)))
 
             # Link to the class NodeShape
             g.add((property_uri, SH.node, class_uri))
@@ -2716,6 +2774,8 @@ class FlaskSHACLGraphEditor:
             node.node_reference = node_data['node_reference'] if node_data['node_reference'] else None
         if 'range' in node_data:
             node.range = node_data['range'] if node_data['range'] else None
+        if 'local_name' in node_data:
+            node.local_name = node_data['local_name'] if node_data['local_name'] else None
             
         return {"success": True, "node": node.to_dict()}
     
@@ -2808,20 +2868,21 @@ class FlaskSHACLGraphEditor:
             print(f"Error in reset_structure: {str(e)}")
             return False
     
-    def create_edge(self, node1_id, node2_id, cardinality="1..1"):
-        """Create an edge between two nodes with cardinality"""
+    def create_edge(self, node1_id, node2_id, cardinality="1..1", order=None):
+        """Create an edge between two nodes with cardinality and optional order"""
         edge_id = f"{node1_id}-{node2_id}"
         reverse_edge_id = f"{node2_id}-{node1_id}"
         
-        # Store edge with cardinality
+        # Store edge with cardinality and order
         self.edges[edge_id] = {
             'id': edge_id,
             'from': node1_id,
             'to': node2_id,
-            'cardinality': cardinality
+            'cardinality': cardinality,
+            'order': order
         }
         
-        print(f"Created edge '{edge_id}' with cardinality {cardinality}")
+        print(f"Created edge '{edge_id}' with cardinality {cardinality}" + (f" and order {order}" if order is not None else ""))
         
         return edge_id
         # Remove reverse edge if it exists (avoid duplicates)
@@ -3145,6 +3206,27 @@ def create_data_element():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/data-elements/<data_element_id>', methods=['PUT'])
+def update_data_element(data_element_id):
+    """Update a data element"""
+    editor = get_user_editor()
+    
+    if data_element_id not in editor.nodes:
+        return jsonify({"error": "Data element not found"}), 404
+    
+    data_element = editor.nodes[data_element_id]
+    if data_element.type != 'data_element':
+        return jsonify({"error": "Node is not a data element"}), 400
+    
+    # Get update data
+    node_data = request.json
+    
+    # Update the node using the general update method
+    result = editor.update_node(data_element_id, node_data)
+    if result:
+        return jsonify(result)
+    return jsonify({"error": "Failed to update data element"}), 500
+
 @app.route('/api/data-elements/<data_element_id>/link-concept', methods=['POST'])
 def link_data_element_to_concept(data_element_id):
     """Link a data element to an I14Y concept"""
@@ -3163,6 +3245,11 @@ def link_data_element_to_concept(data_element_id):
         return jsonify({"error": "Concept data is required"}), 400
     
     try:
+        # Save the existing custom title and description before linking
+        original_title = data_element.title
+        original_description = data_element.description
+        original_local_name = data_element.local_name
+        
         # Create concept URI for conformsTo
         concept_id = concept_data.get('id')
         if concept_id:
@@ -3182,6 +3269,11 @@ def link_data_element_to_concept(data_element_id):
             data_element.in_values = constraints['in_values']
         if 'datatype' in constraints:
             data_element.datatype = constraints['datatype']
+            
+        # Restore the original title, description, and local_name
+        data_element.title = original_title
+        data_element.description = original_description
+        data_element.local_name = original_local_name
         
         return jsonify({"success": True})
     except Exception as e:
@@ -3570,6 +3662,54 @@ def update_edge_cardinality(edge_id):
     if success:
         return jsonify({"success": True})
     return jsonify({"error": "Edge not found"}), 404
+
+@app.route('/api/edges/<edge_id>/order', methods=['POST'])
+def update_edge_order(edge_id):
+    """Update the order of an edge (for ordering data elements)"""
+    editor = get_user_editor()
+    data = request.json
+    order = data.get('order')
+    
+    if order is None:
+        return jsonify({"error": "Order is required"}), 400
+    
+    if edge_id not in editor.edges:
+        return jsonify({"error": "Edge not found"}), 404
+    
+    editor.edges[edge_id]['order'] = int(order)
+    
+    return jsonify({"success": True})
+
+@app.route('/api/nodes/<node_id>/reorder-elements', methods=['POST'])
+def reorder_node_elements(node_id):
+    """Reorder data elements connected to a node (dataset or class)"""
+    editor = get_user_editor()
+    data = request.json
+    element_order = data.get('elementOrder')
+    
+    if not element_order:
+        return jsonify({"error": "Element order is required"}), 400
+    
+    if node_id not in editor.nodes:
+        return jsonify({"error": "Node not found"}), 404
+    
+    # Get all edges from this node to data elements
+    node_edges = {}
+    for edge_id, edge in editor.edges.items():
+        if edge['from'] == node_id:
+            to_node = editor.nodes.get(edge['to'])
+            if to_node and (to_node.type == 'data_element' or to_node.type == 'concept'):
+                node_edges[edge['to']] = edge_id
+    
+    # Update the order for each edge
+    updated_edges = []
+    for index, element_id in enumerate(element_order):
+        if element_id in node_edges:
+            edge_id = node_edges[element_id]
+            editor.edges[edge_id]['order'] = index
+            updated_edges.append(edge_id)
+    
+    return jsonify({"success": True, "updatedEdges": updated_edges})
 
 @app.route('/api/connect', methods=['POST'])
 def connect_nodes():
@@ -4088,7 +4228,7 @@ def export_ttl():
     editor = get_user_editor()
     try:
         # Generate TTL
-        ttl_content = generate_full_ttl(editor.nodes, editor.base_uri)
+        ttl_content = generate_full_ttl(editor.nodes, editor.base_uri, editor.edges)
         
         # Determine filename based on dataset information
         filename = request.args.get('filename', None)
@@ -4296,7 +4436,7 @@ def handle_dataset():
 def parse_ttl_to_nodes(g: Graph, editor) -> bool:
     """Parse RDF graph back to SHACLNode objects"""
     try:
-        from rdflib.namespace import DCTERMS
+        from rdflib.namespace import DCTERMS, DCAT, QB
         
         # Define namespaces
         SH = Namespace("http://www.w3.org/ns/shacl#")
@@ -4307,6 +4447,32 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
         created_nodes = {}
         
         print(f"Found {len(node_shapes)} NodeShapes")
+        
+        # First identify which NodeShape is the dataset
+        dataset_shape = None
+        for shape in node_shapes:
+            # Check for dataset-specific indicators
+            is_dataset = False
+            
+            # Check for data structure definition
+            if (shape, RDF.type, QB.DataStructureDefinition) in g:
+                is_dataset = True
+            
+            # Check for DCAT dataset type
+            if (shape, RDF.type, DCAT.Dataset) in g:
+                is_dataset = True
+                
+            # Check for version information (typically only on datasets)
+            if list(g.objects(shape, Namespace("http://purl.org/pav/").version)):
+                is_dataset = True
+                
+            # Check if it has validFrom (typically only on datasets)
+            if list(g.objects(shape, Namespace("https://schema.org/").validFrom)):
+                is_dataset = True
+                
+            if is_dataset:
+                dataset_shape = shape
+                break
         
         # First pass: Create dataset and class nodes
         for shape in node_shapes:
@@ -4346,12 +4512,8 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 title = str(shape).split('/')[-1].replace('#', '').replace('_', ' ')
             
             # Determine if this is a dataset or class
-            # Check if it has rdfs:Class type or if it's the main dataset shape
-            is_class = (shape, RDF.type, RDFS.Class) in g
-            
-            # Create node
             node_id = str(uuid.uuid4())
-            node_type = 'class' if is_class else 'dataset'
+            node_type = 'dataset' if shape == dataset_shape else 'class'
             
             if not dataset_node and node_type == 'dataset':
                 dataset_node = node_id
@@ -4370,14 +4532,13 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             
             print(f"Created {node_type}: {title}")
         
-        # Second pass: Create concept nodes from PropertyShapes
+        # Second pass: Create data element nodes from PropertyShapes
         property_shapes = list(g.subjects(RDF.type, SH.PropertyShape))
         
         for prop_shape in property_shapes:
-            # Skip if this is an object property (class-to-class relationship)
-            if (prop_shape, RDF.type, OWL.ObjectProperty) in g:
-                continue
-                
+            # Handle object properties (class-to-class relationship) separately
+            is_object_property = (prop_shape, RDF.type, OWL.ObjectProperty) in g
+            
             # Get property details
             titles = list(g.objects(prop_shape, DCTERMS.title))
             labels = list(g.objects(prop_shape, SH.name)) or list(g.objects(prop_shape, RDFS.label))
@@ -4453,12 +4614,32 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             datatypes = list(g.objects(prop_shape, SH.datatype))
             if datatypes:
                 datatype = str(datatypes[0])
+                
+            # Extract enumeration values (sh:in)
+            in_values = []
+            in_lists = list(g.objects(prop_shape, SH['in']))
+            if in_lists:
+                # Follow the RDF list structure
+                current = in_lists[0]
+                while current and current != RDF.nil:
+                    value_literals = list(g.objects(current, RDF.first))
+                    if value_literals:
+                        in_values.append(str(value_literals[0]))
+                    next_nodes = list(g.objects(current, RDF.rest))
+                    if next_nodes:
+                        current = next_nodes[0]
+                    else:
+                        break
             
-            # Create concept node
+            # Check for conformsTo to identify data elements with concept links
+            conforms_to_uris = list(g.objects(prop_shape, DCTERMS.conformsTo))
+            conforms_to_uri = conforms_to_uris[0] if conforms_to_uris else None
+                
+            # Create data element node (not concept)
             node_id = str(uuid.uuid4())
             node_data = {
                 'id': node_id,
-                'type': 'concept',
+                'type': 'data_element',  # Always create as data_element instead of concept
                 'title': title,
                 'description': description,
                 'min_count': min_count,
@@ -4466,14 +4647,49 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 'min_length': min_length,
                 'max_length': max_length,
                 'pattern': pattern,
-                'datatype': datatype or 'xsd:string'
+                'datatype': datatype or 'xsd:string',
+                'in_values': in_values
             }
+            
+            # If this is an object property pointing to a class, handle it differently
+            if is_object_property:
+                # Extract the target class that this object property points to
+                node_refs = list(g.objects(prop_shape, SH.node))
+                if node_refs:
+                    target_class_uri = str(node_refs[0])
+                    if target_class_uri in created_nodes:
+                        # The class has already been created, so just store the reference
+                        # We'll create connections in the next pass
+                        created_nodes[str(prop_shape)] = created_nodes[target_class_uri]
+                        print(f"Mapped object property {title} to class reference")
+                        continue
+            
+            # Add the local_name for the data element (from path or extracted from shape URI)
+            local_name = None
+            paths = list(g.objects(prop_shape, SH.path))
+            if paths:
+                path_str = str(paths[0])
+                local_name = path_str.split('/')[-1].replace('#', '')
+                
+            if not local_name:
+                local_name = str(prop_shape).split('/')[-1].replace('#', '')
+                
+            node_data['local_name'] = local_name
+                
+            # If this data element has a conformsTo link, set it
+            if conforms_to_uri:
+                node_data['conforms_to_concept_uri'] = str(conforms_to_uri)
+                node_data['is_linked_to_concept'] = True
             
             node = SHACLNode.from_dict(node_data)
             editor.nodes[node_id] = node
             created_nodes[str(prop_shape)] = node_id
             
-            print(f"Created concept: {title}")
+            # Log message based on whether it has a concept link
+            if conforms_to_uri:
+                print(f"Created data element with concept link: {title}")
+            else:
+                print(f"Created data element: {title}")
         
         # Third pass: Create connections based on sh:property relationships
         for shape in node_shapes:
@@ -4954,6 +5170,53 @@ def debug_api():
             'base_url': editor.i14y_client.base_url
         }
     })
+
+@app.route('/api/nodes/<node_id>/convert-to-dataset', methods=['POST'])
+def convert_to_dataset(node_id):
+    """Convert a class node to a dataset node"""
+    user_editor = get_user_editor()
+    
+    # Check if node exists
+    if node_id not in user_editor.nodes:
+        return jsonify({"error": "Node not found"}), 404
+    
+    node = user_editor.nodes[node_id]
+    
+    # Check if node is a class
+    if node.type != 'class':
+        return jsonify({"error": "Only class nodes can be converted to dataset"}), 400
+    
+    # Check if there's already a dataset node
+    existing_dataset = None
+    for n in user_editor.nodes.values():
+        if n.type == 'dataset' and n.id != node_id:
+            existing_dataset = n
+            break
+    
+    if existing_dataset:
+        return jsonify({
+            "error": "A dataset node already exists. Please delete it first.",
+            "dataset_id": existing_dataset.id
+        }), 400
+    
+    # Convert the class to a dataset
+    node.type = 'dataset'
+    
+    # Remove any connections where this node is the target
+    # (datasets can't be targets of connections)
+    edges_to_remove = []
+    for edge_id, edge in user_editor.edges.items():
+        if edge['to'] == node_id:
+            edges_to_remove.append(edge_id)
+            # Also remove the connection in the nodes
+            if edge['from'] in user_editor.nodes:
+                user_editor.nodes[edge['from']].connections.discard(node_id)
+            node.connections.discard(edge['from'])
+    
+    for edge_id in edges_to_remove:
+        user_editor.edges.pop(edge_id)
+    
+    return jsonify({"success": True, "node": node.to_dict()})
 
 if __name__ == '__main__':
     import os

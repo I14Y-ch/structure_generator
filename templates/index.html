@@ -7,6 +7,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://unpkg.com/vis@4.21.0/dist/vis.min.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
+    <link href="/static/css/ordering.css" rel="stylesheet">
     
     <!-- Custom CSS for vis.js tooltip word wrapping -->
     <style>
@@ -32,6 +33,20 @@
             white-space: normal !important;
             word-wrap: break-word !important;
             overflow-wrap: break-word !important;
+        }
+        
+        /* Layout switch styling */
+        .form-switch .form-check-input {
+            width: 2.5em;
+            cursor: pointer;
+        }
+        
+        .form-check-label {
+            cursor: pointer;
+        }
+        
+        #reset-view-btn {
+            font-size: 0.85rem;
         }
     </style>
 </head>
@@ -126,6 +141,15 @@
             <!-- Main Graph Area -->
             <div class="col-md-7">
                 <div class="main-content">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <!-- Dynamic layout switch removed for now -->
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-outline-secondary" id="physics-btn">Recalculate Physics</button>
+                            <button class="btn btn-sm btn-outline-secondary ms-2" id="reset-view-btn">Reset View</button>
+                        </div>
+                    </div>
                     <div id="graph-container"></div>
                 </div>
             </div>
@@ -488,6 +512,7 @@
         let nodes, edges;
         let selectedNodeId = null;
         let selectedEdgeId = null;
+        let isDynamicLayout = false; // Default to hierarchical layout
         let connectionMode = false;
         let pendingConnection = null;
 
@@ -504,8 +529,51 @@
                 console.log('vis library is available:', vis);
             }
             
+            // Always use hierarchical layout
+            isDynamicLayout = false;
+            
             initializeGraph();
             loadDataset();
+            
+            // Setup reset view button
+            document.getElementById('reset-view-btn').addEventListener('click', function() {
+                if (network) {
+                    network.fit(); // Reset zoom and center the graph
+                }
+            });
+            
+            // Setup physics toggle button
+            document.getElementById('reset-view-btn').addEventListener('click', function() {
+                if (network) {
+                    network.fit(); // Reset zoom and center the graph
+                }
+            });
+            
+            // Setup physics toggle button
+            document.getElementById('physics-btn').addEventListener('click', function() {
+                if (network) {
+                    const physics = network.physics;
+                    if (physics.physicsEnabled) {
+                        // If physics is running, stabilize the network and then disable
+                        network.stabilize(100);
+                        network.setOptions({ physics: { enabled: false } });
+                        this.textContent = "Recalculate Physics"; // Update button text
+                    } else {
+                        // If physics is stopped, restart it
+                        network.setOptions({ physics: { enabled: true } });
+                        this.textContent = "Freeze Layout"; // Update button text
+                        
+                        // Auto-disable physics after 3 seconds to prevent continuous movement
+                        setTimeout(function() {
+                            if (network && network.physics.physicsEnabled) {
+                                network.setOptions({ physics: { enabled: false } });
+                                document.getElementById('physics-btn').textContent = "Recalculate Physics";
+                            }
+                        }, 3000);
+                    }
+                }
+            });
+            
             loadGraph();
             clearNodeSelection(); // Initialize right sidebar
         });
@@ -556,13 +624,25 @@
                     color: { color: '#848484' },
                     selectionWidth: 4,
                     hoverWidth: 3,
+                    arrows: {
+                        to: {
+                            enabled: false // Ensure arrows are disabled
+                        },
+                        from: {
+                            enabled: false // Ensure arrows are disabled
+                        }
+                    },
                     font: { 
                         size: 12, 
                         color: '#666666',
                         strokeWidth: 2,
                         strokeColor: '#ffffff'
                     },
-                    labelHighlightBold: false
+                    labelHighlightBold: false,
+                    smooth: {
+                        type: 'continuous', // Smoother lines
+                        roundness: 0.5
+                    }
                 },
                 interaction: {
                     hover: true,
@@ -570,7 +650,7 @@
                 },
                 layout: {
                     hierarchical: {
-                        enabled: true,
+                        enabled: true, // Always use hierarchical layout
                         direction: 'UD', // Up-Down
                         sortMethod: 'directed',
                         levelSeparation: 150,
@@ -614,7 +694,7 @@
                 });
                 
                 network.on('stabilizationIterationsDone', function() {
-                    // Disable physics after stabilization
+                    // Always disable physics after stabilization
                     network.setOptions({ physics: { enabled: false } });
                 });
                 
@@ -918,9 +998,17 @@
                                 enabled: true,
                                 direction: 'UD', // Up-Down
                                 sortMethod: 'directed',
-                                levelSeparation: 150,
-                                nodeSpacing: 200,
-                                treeSpacing: 300
+                                levelSeparation: 120, // More compact
+                                nodeSpacing: 150,  // More compact
+                                treeSpacing: 200   // More compact
+                            }
+                        },
+                        physics: {
+                            hierarchicalRepulsion: {
+                                nodeDistance: 120,  // More compact
+                                centralGravity: 0.2,
+                                springLength: 100,
+                                springConstant: 0.05
                             }
                         }
                     };
@@ -1037,7 +1125,38 @@
         }
 
         function loadGraph() {
-            console.log('Loading graph data...');
+            console.log('Loading graph data... Using hierarchical layout');
+            
+            // Set the appropriate layout based on the current mode
+            if (network) {
+                const options = {
+                    layout: {
+                        hierarchical: {
+                            enabled: true,
+                            direction: 'UD', // Up-Down
+                            sortMethod: 'directed',
+                            levelSeparation: 150,
+                            nodeSpacing: 200,
+                            treeSpacing: 300,
+                            blockShifting: false,
+                            edgeMinimization: false,
+                            parentCentralization: false,
+                            shakeTowards: 'leaves'
+                        }
+                    },
+                    physics: {
+                        enabled: false, // Physics is off by default in hierarchical layout
+                        stabilization: {
+                            enabled: true,
+                            iterations: 100,
+                            updateInterval: 50
+                        }
+                    }
+                };
+                
+                network.setOptions(options);
+            }
+            
             fetch('/api/graph')
                 .then(response => {
                     console.log('Graph API response status:', response.status);
@@ -1058,7 +1177,9 @@
                     console.log('Adding nodes:', data.nodes.length);
                     data.nodes.forEach((node, index) => {
                         // Assign hierarchical levels based on node type
-                        let level = 2; // Default level for concepts
+                        let level = 2; // Default level for concepts/data elements
+                        
+                        // In hierarchical layout, organize by node type
                         if (node.type === 'dataset') {
                             level = 0; // Dataset at top
                         } else if (node.type === 'class') {
@@ -1067,7 +1188,7 @@
                         
                         const nodeData = {
                             id: node.id,
-                            level: level, // Add hierarchical level
+                            level: level, // Set hierarchical level
                             label: node.label, // This includes title, type, and publisher
                             title: formatNodeTooltip(node), // Format detailed tooltip with description
                             type: node.type,  // Store the node type for edge styling
@@ -1093,27 +1214,94 @@
                     if (data.edges && Array.isArray(data.edges)) {
                         console.log('Adding edges:', data.edges.length);
                         
+                        // Track connections to prevent duplicates
+                        const connectionTracker = new Set();
+                        
                         const edgeDataArray = [];
                         data.edges.forEach((edge, index) => {
                             // Get nodes by ID
                             const fromNode = nodes.get(edge.from);
                             const toNode = nodes.get(edge.to);
                             
-                            const edgeData = {
-                                id: edge.id,
-                                from: edge.from,
-                                to: edge.to,
-                                label: '', // Removed cardinality labels
-                                arrows: 'to'
+                            if (!fromNode || !toNode) {
+                                console.warn(`Skipping edge ${edge.id}: Missing node references`);
+                                return; // Skip this edge
+                            }
+                            
+                            // Determine node hierarchy levels for arrow direction
+                            const nodeHierarchy = {
+                                'dataset': 0,
+                                'class': 1, 
+                                'data_element': 2,
+                                'concept': 2
                             };
                             
-                            // Style class-to-class connections differently
-                            if (fromNode && toNode && fromNode.type === 'class' && toNode.type === 'class') {
-                                edgeData.color = { color: '#ff6b35' }; // Orange for class-to-class
-                                edgeData.width = 3;
-                                edgeData.dashes = [5, 5]; // Dashed line
-                                edgeData.font = { color: '#ff6b35', size: 11 };
+                            // Get hierarchy levels
+                            const fromLevel = nodeHierarchy[fromNode.type] || 999;
+                            const toLevel = nodeHierarchy[toNode.type] || 999;
+                            
+                            // Determine correct direction: arrow should always point from higher level to lower level
+                            let actualFrom, actualTo;
+                            
+                            if (fromLevel <= toLevel) {
+                                // Regular direction (from higher to lower or same level)
+                                actualFrom = edge.from;
+                                actualTo = edge.to;
                             } else {
+                                // Swap direction (ensure arrow points from higher to lower level)
+                                actualFrom = edge.to;
+                                actualTo = edge.from;
+                            }
+                            
+                            // Create a unique identifier for this connection (regardless of direction)
+                            // This ensures we only have one edge between any two nodes
+                            const nodeIds = [actualFrom, actualTo].sort();
+                            const connectionId = nodeIds.join('_');
+                            
+                            // Skip if we've already processed this connection
+                            if (connectionTracker.has(connectionId)) {
+                                console.log(`Skipping duplicate connection between nodes ${actualFrom} and ${actualTo}`);
+                                return;
+                            }
+                            
+                            // Add to tracker to prevent duplicates
+                            connectionTracker.add(connectionId);
+                            
+                            const edgeData = {
+                                id: edge.id,
+                                from: actualFrom,
+                                to: actualTo,
+                                label: '', // Removed cardinality labels
+                                arrows: '' // No arrows, just lines
+                            };
+                            
+                            // Style connections based on node types
+                            const fromNodeForStyle = nodes.get(actualFrom);
+                            const toNodeForStyle = nodes.get(actualTo);
+                            
+                            if (fromNodeForStyle && toNodeForStyle) {
+                                // Style class-to-class connections differently
+                                if (fromNodeForStyle.type === 'class' && toNodeForStyle.type === 'class') {
+                                    edgeData.color = { color: '#ff6b35' }; // Orange for class-to-class
+                                    edgeData.width = 3;
+                                    edgeData.dashes = [5, 5]; // Dashed line
+                                    edgeData.font = { color: '#ff6b35', size: 11 };
+                                } else if (fromNodeForStyle.type === 'dataset') {
+                                    // Dataset connections
+                                    edgeData.color = { color: '#007bff' }; // Blue for dataset connections
+                                    edgeData.width = 2.5;
+                                } else if (fromNodeForStyle.type === 'class' && 
+                                          (toNodeForStyle.type === 'data_element' || toNodeForStyle.type === 'concept')) {
+                                    // Class to data element/concept connections
+                                    edgeData.color = { color: '#28a745' }; // Green for class to data element/concept
+                                    edgeData.width = 2;
+                                } else {
+                                    // Default styling
+                                    edgeData.color = { color: '#848484' }; // Default gray
+                                    edgeData.width = 2;
+                                }
+                            } else {
+                                // Default styling as fallback
                                 edgeData.color = { color: '#848484' }; // Default gray
                                 edgeData.width = 2;
                             }
@@ -1155,6 +1343,11 @@
                 method: 'POST'
             })
             .then(() => {
+                // Ensure physics remains off when selecting nodes
+                if (network && network.physics.physicsEnabled) {
+                    network.setOptions({ physics: { enabled: false } });
+                }
+                
                 loadGraph();
                 loadNodeDetails(nodeId);
             });
@@ -1258,7 +1451,8 @@
                                 ${isLinked ? '<small class="text-muted">Description is managed by I14Y</small>' : ''}
                             </div>
                             ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
-                            ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
+                            ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100 mb-2" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
+                            <button class="btn btn-outline-info btn-sm w-100 mb-2" onclick="showDataElementOrderingModal()">Reorder Data Elements</button>
                             ${i14yDatasetInfo}
                         `;
                     } else if (node.type === 'class') {
@@ -1278,12 +1472,15 @@
                                     <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
                                 </div>
                                 <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
+                                <button class="btn btn-outline-info btn-sm w-100 mb-2" onclick="showDataElementOrderingModal()">Reorder Data Elements</button>
+                                <button class="btn btn-warning btn-sm w-100 mb-2" onclick="confirmConvertToDataset()">Convert to Dataset</button>
                             `;
                         } else {
                             classEditableFields = `
                                 <strong>Title:</strong> ${node.title}<br>
                                 <strong>Description:</strong> ${description}<br>
                                 <small class="text-muted">This ${node.type} is linked to I14Y and cannot be edited locally.</small><br>
+                                <button class="btn btn-warning btn-sm w-100 mb-2" onclick="confirmConvertToDataset()">Convert to Dataset</button>
                             `;
                         }
                         
@@ -2888,6 +3085,42 @@
                 customSection.style.display = 'none';
             }
         });
+        
+        // Function to confirm and convert a class to dataset
+        function confirmConvertToDataset() {
+            if (!selectedNodeId) return;
+            
+            if (confirm('Are you sure you want to convert this class to a dataset? This will remove any connections pointing to it.')) {
+                fetch(`/api/nodes/${selectedNodeId}/convert-to-dataset`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    } else {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Failed to convert node');
+                        });
+                    }
+                })
+                .then(data => {
+                    if (data.success) {
+                        showToast('Node successfully converted to dataset');
+                        loadGraph();
+                        loadNodeDetails(selectedNodeId);
+                    } else {
+                        showToast('Error: ' + data.error, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('Error: ' + error.message, 'error');
+                });
+            }
+        }
     </script>
 </body>
 </html>
