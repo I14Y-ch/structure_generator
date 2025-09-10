@@ -721,6 +721,26 @@
                     }
                 });
                 
+                // Update ordering values when nodes are dragged
+                network.on('dragEnd', function(params) {
+                    if (params.nodes && params.nodes.length > 0) {
+                        const nodeId = params.nodes[0];
+                        const nodeData = nodes.get(nodeId);
+                        
+                        // Only update ordering for data elements
+                        if (nodeData && nodeData.type === 'data_element') {
+                            const position = network.getPositions([nodeId])[nodeId];
+                            
+                            // Calculate ordering from x position (100px = 1 ordering unit)
+                            const ordering = Math.round(position.x / 100);
+                            console.log(`Node ${nodeId} dragged to x=${position.x}, setting ordering=${ordering}`);
+                            
+                            // Update the ordering in the backend
+                            updateNodeOrdering(nodeId, ordering);
+                        }
+                    }
+                });
+                
                 console.log('Event handlers attached');
             } catch (error) {
                 console.error('Error creating network:', error);
@@ -815,6 +835,30 @@
             .catch(error => {
                 console.error('Error updating node:', error);
                 alert('Error updating node: ' + error.message);
+            });
+        }
+
+        // Function to update a node's ordering based on its x position
+        function updateNodeOrdering(nodeId, ordering) {
+            if (!nodeId) return;
+            
+            fetch(`/api/nodes/${nodeId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    property_order: ordering
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log(`Updated ordering for node ${nodeId} to ${ordering}`);
+                } else {
+                    console.error('Error updating node ordering:', data.error || 'Unknown error');
+                }
+            })
+            .catch(error => {
+                console.error('Error updating node ordering:', error);
             });
         }
 
@@ -1201,6 +1245,13 @@
                                 face: 'arial'
                             }
                         };
+
+                        // Add x position based on property_order if available (for data elements)
+                        if (node.type === 'data_element' && node.property_order !== undefined && node.property_order !== null) {
+                            // Set x position based on ordering (100px per order unit)
+                            nodeData.x = node.property_order * 100;
+                            console.log(`Node ${node.id} (${node.title}) has ordering ${node.property_order}, setting x=${nodeData.x}`);
+                        }
 
                         console.log(`Adding node ${index}:`, nodeData);
                         nodes.add(nodeData);

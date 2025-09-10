@@ -2776,6 +2776,13 @@ class FlaskSHACLGraphEditor:
             node.range = node_data['range'] if node_data['range'] else None
         if 'local_name' in node_data:
             node.local_name = node_data['local_name'] if node_data['local_name'] else None
+        if 'property_order' in node_data:
+            try:
+                # Convert to integer and store
+                node.property_order = int(node_data['property_order'])
+                print(f"Updated property_order for node {node_id} to {node.property_order}")
+            except (ValueError, TypeError):
+                print(f"Invalid property_order value: {node_data['property_order']}")
             
         return {"success": True, "node": node.to_dict()}
     
@@ -3079,6 +3086,7 @@ def get_graph():
             'publisher': publisher,  # Include publisher for tooltip
             'color': color,
             'type': node.type,
+            'property_order': node.property_order,  # Add ordering value for node positioning
             'selected': False  # By default, no node is selected
         })
     
@@ -4586,6 +4594,16 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             max_length = None
             pattern = None
             datatype = None
+            property_order = 0  # Default ordering
+            
+            # Get ordering value (for left-to-right positioning)
+            order_values = list(g.objects(prop_shape, SH.order))
+            if order_values:
+                try:
+                    property_order = int(order_values[0])
+                    print(f"Found ordering {property_order} for property {title}")
+                except (ValueError, TypeError):
+                    pass
             
             # Get cardinality constraints
             min_counts = list(g.objects(prop_shape, SH.minCount))
@@ -4648,7 +4666,8 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 'max_length': max_length,
                 'pattern': pattern,
                 'datatype': datatype or 'xsd:string',
-                'in_values': in_values
+                'in_values': in_values,
+                'property_order': property_order  # Add ordering from TTL
             }
             
             # If this is an object property pointing to a class, handle it differently
