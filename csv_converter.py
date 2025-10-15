@@ -130,8 +130,7 @@ class CSVToSHACL:
         self.g.add((prop_uri, RDF.type, SH.PropertyShape))
         self.g.add((prop_uri, RDF.type, OWL.DatatypeProperty))
         self.g.add((prop_uri, SH.path, prop_uri))
-        self.g.add((prop_uri, SH.datatype, property_type))
-        self.g.add((prop_uri, SH.order, Literal(order)))  
+        self.g.add((prop_uri, SH.datatype, property_type))  
         
         if self.default_lang:
             self.g.add((prop_uri, SH.name, Literal(property_name, lang=self.default_lang)))

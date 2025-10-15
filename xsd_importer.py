@@ -168,7 +168,6 @@ def handle_sequence(sequence, xsd_root, graph, parent_shape, parent_type_name, I
             graph.add((prop_shape, RDF.type, SH.PropertyShape))
             graph.add((prop_shape, SH.path, I14Y[f"{parent_type_name}/{element_name}"]))
             graph.add((prop_shape, SH.name, Literal(element_name, lang='en')))
-            graph.add((prop_shape, SH.order, Literal(order, datatype=XSD.integer)))
             
             # Process element details
             process_element_details(element, xsd_root, graph, prop_shape, I14Y)
@@ -355,8 +354,10 @@ def generate_shacl(xsd_root, dataset_identifier):
     """Generate comprehensive SHACL shapes from the XSD schema."""
     g = Graph()
     
-    # Define I14Y namespace based on dataset identifier
-    i14y_base_path = f"https://www.i14y.admin.ch/resources/datasets/{dataset_identifier}/structure/"
+    # Define I14Y namespace based on dataset identifier - URL encode the dataset identifier to avoid invalid URIs
+    import urllib.parse
+    encoded_dataset_identifier = urllib.parse.quote(dataset_identifier)
+    i14y_base_path = f"https://www.i14y.admin.ch/resources/datasets/{encoded_dataset_identifier}/structure/"
     I14Y = Namespace(i14y_base_path)
     
     # Bind namespaces

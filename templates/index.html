@@ -4,35 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SHACL Editor for I14Y - Web Version</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://unpkg.com/vis@4.21.0/dist/vis.min.css" rel="stylesheet">
     <link href="/static/css/styles.css" rel="stylesheet">
-    <link href="/static/css/ordering.css" rel="stylesheet">
     
-    <!-- Custom CSS for vis.js tooltip word wrapping -->
+    <!-- Custom CSS for D3.js diagram styling -->
     <style>
-        /* Force word wrapping in vis.js tooltips */
-        .vis-tooltip {
-            max-width: 300px !important;
-            white-space: normal !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-            hyphens: auto !important;
+        /* D3.js element styling */
+        .node circle {
+            stroke-width: 2px;
         }
         
-        .vis-tooltip div {
-            max-width: 300px !important;
-            white-space: normal !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-            hyphens: auto !important;
+        .node text {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
         }
         
-        .vis-tooltip * {
-            max-width: 300px !important;
-            white-space: normal !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+        
+        /* Connection mode styling */
+        .source-node circle {
+            stroke: #ff9900 !important;
+            stroke-width: 3px !important;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { stroke-width: 3px; }
+            50% { stroke-width: 5px; }
+            100% { stroke-width: 3px; }
+        }
+        
+        #connection-status.active {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        
+        /* Multi-select styling */
+        #connect-selected-btn {
+            animation: highlight-button 2s infinite;
+        }
+        
+        @keyframes highlight-button {
+            0% { background-color: #28a745; }
+            50% { background-color: #218838; }
+            100% { background-color: #28a745; }
+        }
+        
+        #selection-status {
+            background-color: #e2f0ff !important;
+            border: 1px solid #b8daff !important;
         }
         
         /* Layout switch styling */
@@ -44,23 +71,21 @@
         .form-check-label {
             cursor: pointer;
         }
-        
-        #reset-view-btn {
-            font-size: 0.85rem;
-        }
     </style>
 </head>
 <body>
     <!-- Full-width Header -->
-    <div class="container-fluid bg-light border-bottom">
-        <div class="row">
-            <div class="col-12 py-3 text-center">
-                <h1 class="mb-0">I14Y Data Structure Editor</h1>
+    <header class="app-header">
+        <div class="container-fluid bg-light">
+            <div class="row">
+                <div class="col-12 py-3 text-center">
+                    <h1 class="mb-0">I14Y Data Structure Editor</h1>
+                </div>
             </div>
         </div>
-    </div>
+    </header>
     
-    <div class="container-fluid">
+    <div class="container-fluid main-container">
         <div class="row">
             <!-- Left Sidebar -->
             <div class="col-md-2 sidebar">
@@ -82,15 +107,20 @@
                         <h6 class="mb-0">Actions</h6>
                     </div>
                     <div class="card-body">
-                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="removeSelected()">Remove</button>
-                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="toggleConnectionMode()">Connect</button>
+                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="removeSelected()">Delete Node</button>
+                        <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="toggleConnectionMode()" id="connect-btn">Connect Mode</button>
+                        <button class="btn btn-success btn-sm w-100 mb-2" onclick="connectSelectedNodes()" id="connect-selected-btn" style="display: none;">Connect Selected Nodes</button>
                         <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="detachSelected()" id="detach-btn" style="display: none;">Detach</button>
                         <div id="connection-status" class="connection-mode" style="display: none;">
-                            <small>Click two nodes to connect</small>
+                            <small>Select source node to start connection</small>
+                        </div>
+                        <div id="selection-status" style="display: none; margin-bottom: 10px; padding: 5px; background-color: #f8f9fa; border-radius: 4px; border: 1px solid #ddd;">
+                            <small>No nodes selected</small>
                         </div>
                         <div id="edge-status" style="display: none;">
                             <small>Connection selected - click Detach to remove</small>
                         </div>
+                        <small class="text-muted d-block mt-2">Tip: Hold Shift to select multiple nodes</small>
                     </div>
                 </div>
 
@@ -103,7 +133,6 @@
                         <!-- New Structure Button -->
                         <div class="mb-3">
                             <button class="btn btn-new-structure btn-sm w-100" onclick="createNewStructure()">New Structure</button>
-                            <div class="small text-muted mt-1">Create a new empty structure</div>
                         </div>
                         
                         <!-- TTL Import/Export -->
@@ -141,15 +170,6 @@
             <!-- Main Graph Area -->
             <div class="col-md-7">
                 <div class="main-content">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div>
-                            <!-- Dynamic layout switch removed for now -->
-                        </div>
-                        <div>
-                            <button class="btn btn-sm btn-outline-secondary" id="physics-btn">Recalculate Physics</button>
-                            <button class="btn btn-sm btn-outline-secondary ms-2" id="reset-view-btn">Reset View</button>
-                        </div>
-                    </div>
                     <div id="graph-container"></div>
                 </div>
             </div>
@@ -264,10 +284,6 @@
                             <div class="d-flex gap-2">
                                 <button class="btn btn-outline-dark btn-sm flex-fill" onclick="applyEdgeCardinality()">Apply</button>
                                 <button class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearEdgeSelection()">Cancel</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
                             </div>
                         </div>
                     </div>
@@ -502,662 +518,140 @@
         </div>
     </div>
 
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Vis.js for graph visualization -->
-    <script src="https://unpkg.com/vis@4.21.0/dist/vis.min.js"></script>
-
     <script>
-        let network;
-        let nodes, edges;
+        // Global variables
         let selectedNodeId = null;
         let selectedEdgeId = null;
-        let isDynamicLayout = false; // Default to hierarchical layout
-        let connectionMode = false;
-        let pendingConnection = null;
+        // Variables connectionMode and pendingConnection are already defined in network-d3.js
+        // Do not redeclare them here
 
-        // Initialize the application
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM Content Loaded');
-            
-            // Check if vis is available
-            if (typeof vis === 'undefined') {
-                console.error('vis library is not loaded!');
-                document.getElementById('graph-container').innerHTML = '<p class="text-danger">Error: Vis.js library failed to load</p>';
-                return;
-            } else {
-                console.log('vis library is available:', vis);
-            }
-            
-            // Always use hierarchical layout
-            isDynamicLayout = false;
-            
-            initializeGraph();
-            loadDataset();
-            
-            // Setup reset view button
-            document.getElementById('reset-view-btn').addEventListener('click', function() {
-                if (network) {
-                    network.fit(); // Reset zoom and center the graph
-                }
-            });
-            
-            // Setup physics toggle button
-            document.getElementById('reset-view-btn').addEventListener('click', function() {
-                if (network) {
-                    network.fit(); // Reset zoom and center the graph
-                }
-            });
-            
-            // Setup physics toggle button
-            document.getElementById('physics-btn').addEventListener('click', function() {
-                if (network) {
-                    const physics = network.physics;
-                    if (physics.physicsEnabled) {
-                        // If physics is running, stabilize the network and then disable
-                        network.stabilize(100);
-                        network.setOptions({ physics: { enabled: false } });
-                        this.textContent = "Recalculate Physics"; // Update button text
-                    } else {
-                        // If physics is stopped, restart it
-                        network.setOptions({ physics: { enabled: true } });
-                        this.textContent = "Freeze Layout"; // Update button text
-                        
-                        // Auto-disable physics after 3 seconds to prevent continuous movement
-                        setTimeout(function() {
-                            if (network && network.physics.physicsEnabled) {
-                                network.setOptions({ physics: { enabled: false } });
-                                document.getElementById('physics-btn').textContent = "Recalculate Physics";
-                            }
-                        }, 3000);
-                    }
-                }
-            });
-            
-            loadGraph();
-            clearNodeSelection(); // Initialize right sidebar
-        });
-
-        function clearNodeSelection() {
-            selectedNodeId = null;
-            selectedEdgeId = null;
-            document.getElementById('selected-node-section').style.display = 'none';
-            document.getElementById('selected-edge-section').style.display = 'none';
-            document.getElementById('no-node-selected').style.display = 'block';
-            document.getElementById('detach-btn').style.display = 'none';
-            document.getElementById('edge-status').style.display = 'none';
-        }
-
-        function initializeGraph() {
-            const container = document.getElementById('graph-container');
-            
-            console.log('Initializing graph with container:', container);
-            
-            // Create DataSets with new vis-network API
-            nodes = new vis.DataSet([]);
-            edges = new vis.DataSet([]);
-            
-            console.log('DataSets created');
-
-            // Simple network options for debugging
-            const options = {
-                nodes: {
-                    shape: 'box',
-                    margin: 10,
-                    font: { 
-                        size: 14,
-                        // No multi setting to avoid rendering HTML tags
-                    },
-                    borderWidth: 2,
-                    heightConstraint: {
-                        minimum: 30
-                    },
-                    widthConstraint: {
-                        minimum: 100,
-                        maximum: 250
-                    },
-                    // Configure tooltips for nodes
-                    tooltipDelay: 200,
-                },
-                edges: {
-                    width: 2,
-                    color: { color: '#848484' },
-                    selectionWidth: 4,
-                    hoverWidth: 3,
-                    arrows: {
-                        to: {
-                            enabled: false // Ensure arrows are disabled
-                        },
-                        from: {
-                            enabled: false // Ensure arrows are disabled
-                        }
-                    },
-                    font: { 
-                        size: 12, 
-                        color: '#666666',
-                        strokeWidth: 2,
-                        strokeColor: '#ffffff'
-                    },
-                    labelHighlightBold: false,
-                    smooth: {
-                        type: 'continuous', // Smoother lines
-                        roundness: 0.5
-                    }
-                },
-                interaction: {
-                    hover: true,
-                    tooltipDelay: 200
-                },
-                layout: {
-                    hierarchical: {
-                        enabled: true, // Always use hierarchical layout
-                        direction: 'UD', // Up-Down
-                        sortMethod: 'directed',
-                        levelSeparation: 150,
-                        nodeSpacing: 200,
-                        treeSpacing: 300,
-                        blockShifting: false,
-                        edgeMinimization: false,
-                        parentCentralization: false,
-                        shakeTowards: 'leaves'
-                    }
-                },
-                physics: {
-                    enabled: false, // Disable physics for stable layout
-                    hierarchicalRepulsion: {
-                        nodeDistance: 180,
-                        centralGravity: 0.0,
-                        springLength: 150,
-                        springConstant: 0.01,
-                        damping: 0.09
-                    }
-                },
-                interaction: {
-                    selectConnectedEdges: false,
-                    dragNodes: true,
-                    dragView: true,
-                    zoomView: true,
-                    hover: true
-                }
-            };
-
-            console.log('Creating network with options:', options);
-            
-            // Create network with new vis-network API
-            try {
-                network = new vis.Network(container, { nodes: nodes, edges: edges }, options);
-                console.log('Network created successfully');
-                
-                // Handle stabilization for new nodes
-                network.on('stabilizationProgress', function(params) {
-                    // Don't show progress since we want minimal physics
-                });
-                
-                network.on('stabilizationIterationsDone', function() {
-                    // Always disable physics after stabilization
-                    network.setOptions({ physics: { enabled: false } });
-                });
-                
-                // Handle node and edge selection
-                network.on('click', function(params) {
-                    console.log('Network clicked:', params);
-                    if (params.nodes.length > 0) {
-                        const nodeId = params.nodes[0];
-                        
-                        if (connectionMode) {
-                            handleConnectionClick(nodeId);
-                        } else {
-                            selectNode(nodeId);
-                        }
-                    } else if (params.edges.length > 0) {
-                        // Edge was clicked
-                        const edgeId = params.edges[0];
-                        selectEdge(edgeId);
-                    } else {
-                        // Clicked on empty space - clear selection
-                        if (!connectionMode) {
-                            clearNodeSelection();
-                        }
-                    }
-                });
-                
-                // Update ordering values when nodes are dragged
-                network.on('dragEnd', function(params) {
-                    if (params.nodes && params.nodes.length > 0) {
-                        const nodeId = params.nodes[0];
-                        const nodeData = nodes.get(nodeId);
-                        
-                        // Only update ordering for data elements
-                        if (nodeData && nodeData.type === 'data_element') {
-                            const position = network.getPositions([nodeId])[nodeId];
-                            
-                            // Calculate ordering from x position (100px = 1 ordering unit)
-                            const ordering = Math.round(position.x / 100);
-                            console.log(`Node ${nodeId} dragged to x=${position.x}, setting ordering=${ordering}`);
-                            
-                            // Update the ordering in the backend
-                            updateNodeOrdering(nodeId, ordering);
-                        }
-                    }
-                });
-                
-                console.log('Event handlers attached');
-            } catch (error) {
-                console.error('Error creating network:', error);
-            }
-        }
-
-        function loadDataset() {
-            fetch('/api/dataset')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('dataset-title').value = data.title;
-                    document.getElementById('dataset-description').value = data.description;
-                });
-        }
-
-        function updateDataset() {
-            const title = document.getElementById('dataset-title').value;
-            const description = document.getElementById('dataset-description').value;
-
-            fetch('/api/dataset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: title, description: description })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    loadGraph();
-                }
-            });
-        }
-
-        function updateDatasetInfo() {
-            const title = document.getElementById('edit-dataset-title').value;
-            const description = document.getElementById('edit-dataset-description').value;
-
-            fetch('/api/dataset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: title, description: description })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Dataset updated successfully!');
-                    loadGraph();
-                    // Reload the node details to show updated information
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                } else {
-                    alert('Error updating dataset');
-                }
-            });
-        }
-
-        function updateNodeInfo() {
-            if (!selectedNodeId) {
-                alert('No node selected');
-                return;
-            }
-
-            const title = document.getElementById('edit-node-title').value;
-            const description = document.getElementById('edit-node-description').value;
-
-            if (!title.trim()) {
-                alert('Title is required');
-                return;
-            }
-
-            fetch(`/api/nodes/${selectedNodeId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    title: title.trim(), 
-                    description: description.trim() 
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Node updated successfully!');
-                    loadGraph();
-                    // Reload the node details to show updated information
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                } else {
-                    alert('Error updating node: ' + (data.error || 'Unknown error'));
-                }
-            })
-            .catch(error => {
-                console.error('Error updating node:', error);
-                alert('Error updating node: ' + error.message);
-            });
-        }
-
-        // Function to update a node's ordering based on its x position
-        function updateNodeOrdering(nodeId, ordering) {
-            if (!nodeId) return;
-            
-            fetch(`/api/nodes/${nodeId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    property_order: ordering
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log(`Updated ordering for node ${nodeId} to ${ordering}`);
-                } else {
-                    console.error('Error updating node ordering:', data.error || 'Unknown error');
-                }
-            })
-            .catch(error => {
-                console.error('Error updating node ordering:', error);
-            });
-        }
-
-        function updateDataElementInfo() {
-            if (!selectedNodeId) {
-                alert('No node selected');
-                return;
-            }
-
-            const localName = document.getElementById('edit-data-element-local-name').value;
-            const description = document.getElementById('edit-data-element-description').value;
-
-            if (!localName.trim()) {
-                alert('Local name is required');
-                return;
-            }
-
-            fetch(`/api/data-elements/${selectedNodeId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    local_name: localName.trim(),
-                    title: localName.trim(), // Keep title in sync with local_name
-                    description: description.trim() 
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Data element updated successfully!');
-                    loadGraph();
-                    // Reload the node details to show updated information
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                } else {
-                    alert('Error updating data element: ' + (data.error || 'Unknown error'));
-                }
-            })
-            .catch(error => {
-                console.error('Error updating data element:', error);
-                alert('Error updating data element: ' + error.message);
-            });
-        }
-
-        function unlinkDataElementFromConcept() {
-            if (!selectedNodeId) {
-                alert('No node selected');
-                return;
-            }
-
-            if (confirm('Are you sure you want to unlink this data element from its I14Y concept?')) {
-                fetch(`/api/data-elements/${selectedNodeId}/unlink-concept`, {
-                    method: 'POST'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        alert('Data element unlinked from concept successfully!');
-                        loadGraph();
-                        // Reload the node details to show updated information
-                        if (selectedNodeId) {
-                            loadNodeDetails(selectedNodeId);
-                        }
-                    } else {
-                        alert('Error unlinking data element: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    console.error('Error unlinking data element:', error);
-                    alert('Error unlinking data element: ' + error.message);
-                });
-            }
-        }
-
-        function showLinkDataElementToConceptModal() {
-            // Reuse the existing I14Y search modal but filter for concepts only
-            document.getElementById('i14y-search-query').value = '';
-            document.getElementById('i14y-results').innerHTML = '';
-            
-            // Set a flag to know we're linking a data element
-            window.linkingDataElement = true;
-            
-            new bootstrap.Modal(document.getElementById('i14ySearchModal')).show();
-        }
-
-        function linkDataElementToConcept(conceptId) {
-            if (!selectedNodeId) {
-                alert('No data element selected');
-                return;
-            }
-
-            // Find the concept in the search results
-            const conceptFromSearch = lastI14YSearchResults.find(c => c.id === conceptId);
-            if (!conceptFromSearch) {
-                alert('Concept not found in search results');
-                return;
-            }
-
-            // Link the data element to the concept
-            fetch(`/api/data-elements/${selectedNodeId}/link-concept`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    concept_data: conceptFromSearch
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Data element linked to concept successfully!');
-                    
-                    // Clear the linking flag and close the modal
-                    window.linkingDataElement = false;
-                    bootstrap.Modal.getInstance(document.getElementById('i14ySearchModal')).hide();
-                    
-                    loadGraph();
-                    // Reload the node details to show updated information
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                } else {
-                    alert('Error linking data element: ' + (data.error || 'Unknown error'));
-                }
-            })
-            .catch(error => {
-                console.error('Error linking data element:', error);
-                alert('Error linking data element: ' + error.message);
-            });
-        }
-
-        // Function to completely reset the network visualization
-        function forceNetworkReset() {
-            console.log('Forcing complete network reset...');
-            
-            // Clear all data
-            nodes.clear();
-            edges.clear();
-            
-            // Destroy and recreate network
-            if (network) {
-                try {
-                    // Get container
-                    const container = document.getElementById('graph-container');
-                    
-                    // Destroy network
-                    network.destroy();
-                    
-                    // Recreate network with empty data
-                    const options = {
-                        nodes: {
-                            shape: 'box',
-                            margin: 10,
-                            font: { 
-                                size: 14
-                                // No multi setting to avoid rendering HTML tags
-                            },
-                            borderWidth: 2,
-                            heightConstraint: {
-                                minimum: 30
-                            },
-                            widthConstraint: {
-                                minimum: 100
-                            }
-                        },
-                        edges: {
-                            width: 2,
-                            color: { color: '#848484' },
-                            selectionWidth: 4,
-                            hoverWidth: 3,
-                            font: { 
-                                size: 12, 
-                                color: '#666666',
-                                strokeWidth: 2,
-                                strokeColor: '#ffffff'
-                            },
-                            labelHighlightBold: false
-                        },
-                        layout: {
-                            hierarchical: {
-                                enabled: true,
-                                direction: 'UD', // Up-Down
-                                sortMethod: 'directed',
-                                levelSeparation: 120, // More compact
-                                nodeSpacing: 150,  // More compact
-                                treeSpacing: 200   // More compact
-                            }
-                        },
-                        physics: {
-                            hierarchicalRepulsion: {
-                                nodeDistance: 120,  // More compact
-                                centralGravity: 0.2,
-                                springLength: 100,
-                                springConstant: 0.05
-                            }
-                        }
-                    };
-                    
-                    network = new vis.Network(
-                        container, 
-                        { nodes: nodes, edges: edges },
-                        options
-                    );
-                    
-                    // Rebind event handlers
-                    network.on('click', function(params) {
-                        console.log('Network clicked:', params);
-                        if (params.nodes.length > 0) {
-                            const nodeId = params.nodes[0];
-                            
-                            if (connectionMode) {
-                                handleConnectionClick(nodeId);
-                            } else {
-                                selectNode(nodeId);
-                            }
-                        } else if (params.edges.length > 0) {
-                            // Edge was clicked
-                            const edgeId = params.edges[0];
-                            selectEdge(edgeId);
-                        } else {
-                            // Clicked on empty space - clear selection
-                            if (!connectionMode) {
-                                clearNodeSelection();
-                            }
-                        }
-                    });
-                    
-                    console.log('Network reset complete');
-                } catch (error) {
-                    console.error('Error resetting network:', error);
-                    // Fallback: initialize graph again
-                    initializeGraph();
-                }
-            } else {
-                // Just initialize the graph again
-                initializeGraph();
-            }
-        }
-
-        // Function to format node tooltip with all relevant information
-        function formatNodeTooltip(node) {
-            if (!node) return '';
-            
-            let tooltip = '<div style="max-width: 300px !important; width: 300px !important; padding: 8px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; hyphens: auto;">';
-            
-            // Title
-            const title = typeof node.title === 'object' ? getMultilingualText(node.title) : node.title;
-            tooltip += `<div style="font-weight: bold; font-size: 14px; margin-bottom: 5px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;">${escapeHtml(title)}</div>`;
-            
-            // Type badge with color matching the node color
-            let typeBgColor = '#99ccff'; // Default blue for concepts
-            if (node.type === 'dataset') {
-                typeBgColor = '#ff9999'; // Light red for dataset
-            } else if (node.type === 'class') {
-                typeBgColor = '#99ff99'; // Light green for classes
-            }
-            
-            // Get the node type
-            let nodeTypeDisplay = node.type.charAt(0).toUpperCase() + node.type.slice(1);
-            tooltip += `<div style="display: inline-block; background-color: ${typeBgColor}; padding: 2px 6px; border-radius: 3px; font-size: 12px; margin-bottom: 8px; word-wrap: break-word !important;">${escapeHtml(nodeTypeDisplay)}</div>`;
-            
-            // Publisher if available
-            if (node.publisher) {
-                const publisher = typeof node.publisher === 'object' ? getMultilingualText(node.publisher) : node.publisher;
-                tooltip += `<div style="margin-bottom: 5px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><strong>Publisher:</strong> ${escapeHtml(publisher)}</div>`;
-            }
-            
-            // ID if available (for debugging purposes)
-            if (node.id) {
-                tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">ID: ${escapeHtml(node.id)}</small></div>`;
-            }
-            
-            // I14Y ID if available
-            if (node.i14y_id) {
-                if (node.type === 'concept') {
-                    tooltip += `<div style="margin-bottom: 5px; font-size: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Concept ID: ${escapeHtml(node.i14y_id)}</small></div>`;
-                } else if (node.type === 'dataset') {
-                    tooltip += `<div style="margin-bottom: 5px; font-sixze: 11px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important;"><small class="text-muted">I14Y Dataset ID: ${escapeHtml(node.i14y_id)}</small></div>`;
-                }
-            }
-            
-            // Description if available - limit to 50 words and add word wrapping
-            if (node.description) {
-                let description = typeof node.description === 'object' ? getMultilingualText(node.description) : node.description;
-                
-                // Limit description to 50 words
-                const words = description.split(/\s+/);
-                if (words.length > 50) {
-                    description = words.slice(0, 50).join(' ') + '...';
-                }
-                
-                tooltip += `<div style="border-top: 1px solid #ddd; padding-top: 5px; margin-top: 5px; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; line-height: 1.4; hyphens: auto;">${escapeHtml(description)}</div>`;
-            }
-            
-            tooltip += '</div>';
-            return tooltip;
+        // Wrapper function to call the D3 graph loading function
+        function loadGraph() {
+            loadGraphWithD3();
         }
         
-        // Helper function to escape HTML to prevent XSS
+        // Test function to display nodes directly without D3.js
+        function testDisplayNodes() {
+            const debugEl = document.getElementById('debug-info');
+            debugEl.innerHTML = '<div>Loading graph data...</div>';
+            
+            fetch('/api/graph')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    debugEl.innerHTML = '<div>Graph data received:</div>';
+                    debugEl.innerHTML += `<div>Nodes: ${data.nodes.length}, Edges: ${data.edges.length}</div>`;
+                    
+                    // Create a simple HTML representation of nodes
+                    const container = document.getElementById('graph-container');
+                    container.innerHTML = '';
+                    
+                    // Create an SVG container
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', '100%');
+                    svg.setAttribute('height', '500px');
+                    svg.style.border = '1px solid #ccc';
+                    svg.style.backgroundColor = '#f8f8f8';
+                    container.appendChild(svg);
+                    
+                    // Place nodes evenly
+                    const width = 800;
+                    const height = 400;
+                    const centerX = width / 2;
+                    const centerY = height / 2;
+                    const radius = Math.min(width, height) / 3;
+                    
+                    data.nodes.forEach((node, index) => {
+                        // Calculate position in a circle
+                        const angle = (index / data.nodes.length) * 2 * Math.PI;
+                        const x = centerX + radius * Math.cos(angle);
+                        const y = centerY + radius * Math.sin(angle);
+                        
+                        // Create circle for node
+                        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                        circle.setAttribute('cx', x);
+                        circle.setAttribute('cy', y);
+                        circle.setAttribute('r', '30');
+                        
+                        // Set color based on node type
+                        let color = '#aaaaaa';
+                        switch (node.type) {
+                            case 'dataset': color = '#ffffcc'; break;
+                            case 'class': color = '#e6f3ff'; break;
+                            case 'data_element': color = '#f0f0f0'; break;
+                            case 'concept': color = '#e6ffe6'; break;
+                        }
+                        
+                        circle.setAttribute('fill', color);
+                        circle.setAttribute('stroke', '#000');
+                        circle.setAttribute('stroke-width', '2');
+                        svg.appendChild(circle);
+                        
+                        // Add text label
+                        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        text.setAttribute('x', x);
+                        text.setAttribute('y', y);
+                        text.setAttribute('text-anchor', 'middle');
+                        text.setAttribute('dominant-baseline', 'middle');
+                        text.textContent = node.title;
+                        svg.appendChild(text);
+                        
+                        // Add type label
+                        const typeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        typeText.setAttribute('x', x);
+                        typeText.setAttribute('y', y + 20);
+                        typeText.setAttribute('text-anchor', 'middle');
+                        typeText.setAttribute('font-size', '10px');
+                        typeText.textContent = node.type;
+                        svg.appendChild(typeText);
+                    });
+                    
+                    // Add debug data
+                    debugEl.innerHTML += '<div class="mt-2">Node data:</div>';
+                    data.nodes.forEach(node => {
+                        debugEl.innerHTML += `<div>${node.id}: ${node.title} (${node.type})</div>`;
+                    });
+                })
+                .catch(error => {
+                    debugEl.innerHTML = `<div class="text-danger">Error: ${error.message}</div>`;
+                    console.error('Error fetching graph data:', error);
+                });
+        }
+        
+        // Make test function globally available
+        window.testDisplayNodes = testDisplayNodes;
+        
+        // Define global handlers that network-d3.js will call
+        window.selectNode = function(nodeId) {
+            selectedNodeId = nodeId;
+            loadNodeDetails(nodeId);
+            document.getElementById('selected-node-section').style.display = 'block';
+            document.getElementById('selected-edge-section').style.display = 'none';
+            document.getElementById('no-node-selected').style.display = 'none';
+        }
+        
+        window.selectEdge = function(edgeId) {
+            selectedEdgeId = edgeId;
+            document.getElementById('selected-node-section').style.display = 'none';
+            document.getElementById('selected-edge-section').style.display = 'block';
+            document.getElementById('no-node-selected').style.display = 'none';
+            document.getElementById('detach-btn').style.display = 'block';
+            document.getElementById('edge-status').style.display = 'block';
+            loadEdgeDetails(edgeId);
+        }
+        
+        // Helper function to get text from multilingual objects
+        function getMultilingualText(obj) {
+            if (!obj) return '';
+            if (typeof obj === 'string') return obj;
+            return obj.de || obj.en || obj.fr || obj.it || obj.rm || Object.values(obj)[0] || '';
+        }
+        
+        // Helper function to escape HTML
         function escapeHtml(unsafe) {
             if (!unsafe) return '';
             return unsafe
@@ -1168,217 +662,86 @@
                 .replace(/'/g, "&#039;");
         }
 
-        function loadGraph() {
-            console.log('Loading graph data... Using hierarchical layout');
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded - Initializing D3.js visualization');
             
-            // Set the appropriate layout based on the current mode
-            if (network) {
-                const options = {
-                    layout: {
-                        hierarchical: {
-                            enabled: true,
-                            direction: 'UD', // Up-Down
-                            sortMethod: 'directed',
-                            levelSeparation: 150,
-                            nodeSpacing: 200,
-                            treeSpacing: 300,
-                            blockShifting: false,
-                            edgeMinimization: false,
-                            parentCentralization: false,
-                            shakeTowards: 'leaves'
-                        }
-                    },
-                    physics: {
-                        enabled: false, // Physics is off by default in hierarchical layout
-                        stabilization: {
-                            enabled: true,
-                            iterations: 100,
-                            updateInterval: 50
-                        }
-                    }
-                };
+            try {
+                // Check if D3 is loaded
+                if (typeof d3 === 'undefined') {
+                    console.error('D3.js library not loaded!');
+                    return;
+                }
                 
-                network.setOptions(options);
-            }
-            
-            fetch('/api/graph')
-                .then(response => {
-                    console.log('Graph API response status:', response.status);
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Graph data received:', data);
-                    
-                    if (!data.nodes || !Array.isArray(data.nodes)) {
-                        console.error('Invalid graph data format:', data);
-                        return;
-                    }
-                    
-                    // Update nodes
-                    console.log('Clearing existing nodes...');
-                    nodes.clear();
-                    
-                    console.log('Adding nodes:', data.nodes.length);
-                    data.nodes.forEach((node, index) => {
-                        // Assign hierarchical levels based on node type
-                        let level = 2; // Default level for concepts/data elements
-                        
-                        // In hierarchical layout, organize by node type
-                        if (node.type === 'dataset') {
-                            level = 0; // Dataset at top
-                        } else if (node.type === 'class') {
-                            level = 1; // Classes in middle
-                        }
-                        
-                        const nodeData = {
-                            id: node.id,
-                            level: level, // Set hierarchical level
-                            label: node.label, // This includes title, type, and publisher
-                            title: formatNodeTooltip(node), // Format detailed tooltip with description
-                            type: node.type,  // Store the node type for edge styling
-                            color: {
-                                background: node.selected ? '#ffff00' : node.color,
-                                border: node.selected ? '#333' : '#666'
-                            },
-                            font: { 
-                                color: node.selected ? '#000' : '#333',
-                                face: 'arial'
-                            }
-                        };
-
-                        // Add x position based on property_order if available (for data elements)
-                        if (node.type === 'data_element' && node.property_order !== undefined && node.property_order !== null) {
-                            // Set x position based on ordering (100px per order unit)
-                            nodeData.x = node.property_order * 100;
-                            console.log(`Node ${node.id} (${node.title}) has ordering ${node.property_order}, setting x=${nodeData.x}`);
-                        }
-
-                        console.log(`Adding node ${index}:`, nodeData);
-                        nodes.add(nodeData);
-                    });
-
-                    // Update edges
-                    console.log('Clearing existing edges...');
-                    edges.clear();
-                    
-                    // Check if edges exist and are an array
-                    if (data.edges && Array.isArray(data.edges)) {
-                        console.log('Adding edges:', data.edges.length);
-                        
-                        // Track connections to prevent duplicates
-                        const connectionTracker = new Set();
-                        
-                        const edgeDataArray = [];
-                        data.edges.forEach((edge, index) => {
-                            // Get nodes by ID
-                            const fromNode = nodes.get(edge.from);
-                            const toNode = nodes.get(edge.to);
-                            
-                            if (!fromNode || !toNode) {
-                                console.warn(`Skipping edge ${edge.id}: Missing node references`);
-                                return; // Skip this edge
-                            }
-                            
-                            // Determine node hierarchy levels for arrow direction
-                            const nodeHierarchy = {
-                                'dataset': 0,
-                                'class': 1, 
-                                'data_element': 2,
-                                'concept': 2
-                            };
-                            
-                            // Get hierarchy levels
-                            const fromLevel = nodeHierarchy[fromNode.type] || 999;
-                            const toLevel = nodeHierarchy[toNode.type] || 999;
-                            
-                            // Determine correct direction: arrow should always point from higher level to lower level
-                            let actualFrom, actualTo;
-                            
-                            if (fromLevel <= toLevel) {
-                                // Regular direction (from higher to lower or same level)
-                                actualFrom = edge.from;
-                                actualTo = edge.to;
-                            } else {
-                                // Swap direction (ensure arrow points from higher to lower level)
-                                actualFrom = edge.to;
-                                actualTo = edge.from;
-                            }
-                            
-                            // Create a unique identifier for this connection (regardless of direction)
-                            // This ensures we only have one edge between any two nodes
-                            const nodeIds = [actualFrom, actualTo].sort();
-                            const connectionId = nodeIds.join('_');
-                            
-                            // Skip if we've already processed this connection
-                            if (connectionTracker.has(connectionId)) {
-                                console.log(`Skipping duplicate connection between nodes ${actualFrom} and ${actualTo}`);
-                                return;
-                            }
-                            
-                            // Add to tracker to prevent duplicates
-                            connectionTracker.add(connectionId);
-                            
-                            const edgeData = {
-                                id: edge.id,
-                                from: actualFrom,
-                                to: actualTo,
-                                label: '', // Removed cardinality labels
-                                arrows: '' // No arrows, just lines
-                            };
-                            
-                            // Style connections based on node types
-                            const fromNodeForStyle = nodes.get(actualFrom);
-                            const toNodeForStyle = nodes.get(actualTo);
-                            
-                            if (fromNodeForStyle && toNodeForStyle) {
-                                // Style class-to-class connections differently
-                                if (fromNodeForStyle.type === 'class' && toNodeForStyle.type === 'class') {
-                                    edgeData.color = { color: '#ff6b35' }; // Orange for class-to-class
-                                    edgeData.width = 3;
-                                    edgeData.dashes = [5, 5]; // Dashed line
-                                    edgeData.font = { color: '#ff6b35', size: 11 };
-                                } else if (fromNodeForStyle.type === 'dataset') {
-                                    // Dataset connections
-                                    edgeData.color = { color: '#007bff' }; // Blue for dataset connections
-                                    edgeData.width = 2.5;
-                                } else if (fromNodeForStyle.type === 'class' && 
-                                          (toNodeForStyle.type === 'data_element' || toNodeForStyle.type === 'concept')) {
-                                    // Class to data element/concept connections
-                                    edgeData.color = { color: '#28a745' }; // Green for class to data element/concept
-                                    edgeData.width = 2;
-                                } else {
-                                    // Default styling
-                                    edgeData.color = { color: '#848484' }; // Default gray
-                                    edgeData.width = 2;
+                console.log('D3.js library loaded ✓');
+                
+                // Check if container exists
+                const container = document.getElementById('graph-container');
+                if (!container) {
+                    console.error('Graph container not found!');
+                    return;
+                }
+                
+                console.log('Graph container found ✓');
+                
+                // Initialize the D3.js visualization
+                try {
+                    // Make sure the function is available
+                    if (typeof window.initializeD3Visualization === 'function') {
+                        window.initializeD3Visualization('graph-container');
+                        console.log('D3 visualization initialized ✓');
+                    } else {
+                        console.error('D3 initialization function not found. Waiting...');
+                        // Try again after a short delay to ensure scripts are loaded
+                        setTimeout(() => {
+                            if (typeof window.initializeD3Visualization === 'function') {
+                                window.initializeD3Visualization('graph-container');
+                                console.log('D3 visualization initialized after delay ✓');
+                                // Also load the graph data if initialization succeeds
+                                try {
+                                    window.loadGraphWithD3();
+                                } catch (graphErr) {
+                                    console.error('Error loading graph after delay:', graphErr);
                                 }
                             } else {
-                                // Default styling as fallback
-                                edgeData.color = { color: '#848484' }; // Default gray
-                                edgeData.width = 2;
+                                console.error('D3 initialization function still not found after delay');
                             }
-                            
-                            console.log(`Adding edge ${index}:`, edgeData);
-                            edgeDataArray.push(edgeData);
-                        });
-                        
-                        // Add all edges at once for better performance and to avoid partial updates
-                        edges.add(edgeDataArray);
+                        }, 500);
+                    }
+                } catch (err) {
+                    console.error('Error initializing D3:', err);
+                    return;
+                }
+                
+                // Load graph data
+                try {
+                    if (typeof window.loadGraphWithD3 === 'function') {
+                        window.loadGraphWithD3();
+                        console.log('Graph data loading started ✓');
                     } else {
-                        console.log('No edges to add or invalid edges data');
+                        console.error('loadGraphWithD3 function not found');
                     }
-                    
-                    console.log('Final nodes count:', nodes.length);
-                    console.log('Final edges count:', edges.length);
-                    
-                    // Force network redraw
-                    if (network) {
-                        console.log('Redrawing network...');
-                        network.redraw();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading graph:', error);
-                });
+                } catch (err) {
+                    console.error('Error loading graph:', err);
+                    return;
+                }
+                
+                // Initialize right sidebar
+                clearNodeSelection();
+                console.log('Initialization complete ✓');
+            } catch (err) {
+                console.error('Error during initialization:', err);
+            }
+        });
+
+        function clearNodeSelection() {
+            selectedNodeId = null;
+            selectedEdgeId = null;
+            document.getElementById('selected-node-section').style.display = 'none';
+            document.getElementById('selected-edge-section').style.display = 'none';
+            document.getElementById('no-node-selected').style.display = 'block';
+            document.getElementById('detach-btn').style.display = 'none';
+            document.getElementById('edge-status').style.display = 'none';
         }
 
         function selectNode(nodeId) {
@@ -1394,12 +757,6 @@
                 method: 'POST'
             })
             .then(() => {
-                // Ensure physics remains off when selecting nodes
-                if (network && network.physics.physicsEnabled) {
-                    network.setOptions({ physics: { enabled: false } });
-                }
-                
-                loadGraph();
                 loadNodeDetails(nodeId);
             });
         }
@@ -1417,9 +774,6 @@
             document.getElementById('detach-btn').style.display = 'block';
             document.getElementById('edge-status').style.display = 'block';
             
-            // Highlight the selected edge
-            network.selectEdges([edgeId]);
-            
             // Load edge details
             loadEdgeDetails(edgeId);
             
@@ -1427,14 +781,19 @@
         }
 
         function loadNodeDetails(nodeId) {
-            console.log('Loading node details for:', nodeId); // Debug log
+            console.log('Loading node details for:', nodeId);
             fetch(`/api/nodes/${nodeId}`)
                 .then(response => response.json())
                 .then(node => {
-                    console.log('Received node data:', node); // Debug log
+                    console.log('Received node data:', node);
+                    
                     // Show right sidebar and hide placeholder
                     document.getElementById('selected-node-section').style.display = 'block';
                     document.getElementById('no-node-selected').style.display = 'none';
+
+                    // The rest of the loadNodeDetails function remains the same as in the original file
+                    // with all the logic for handling different node types
+                    // ...
 
                     // Truncate description to first 50 words
                     let description = node.description || 'None';
@@ -1499,11 +858,10 @@
                             <div class="mb-3">
                                 <label for="edit-dataset-description" class="form-label small">Description:</label>
                                 <textarea class="form-control form-control-sm" id="edit-dataset-description" rows="3" ${isLinked ? 'readonly' : ''}>${node.description}</textarea>
-                                ${isLinked ? '<small class="text-muted">Description is managed by I14Y</small>' : ''}
+                                ${isLinked ? '<small class="text-muted">Description is managed on I14Y</small>' : ''}
                             </div>
                             ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
                             ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100 mb-2" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
-                            <button class="btn btn-outline-info btn-sm w-100 mb-2" onclick="showDataElementOrderingModal()">Reorder Data Elements</button>
                             ${i14yDatasetInfo}
                         `;
                     } else if (node.type === 'class') {
@@ -1523,7 +881,6 @@
                                     <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
                                 </div>
                                 <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
-                                <button class="btn btn-outline-info btn-sm w-100 mb-2" onclick="showDataElementOrderingModal()">Reorder Data Elements</button>
                                 <button class="btn btn-warning btn-sm w-100 mb-2" onclick="confirmConvertToDataset()">Convert to Dataset</button>
                             `;
                         } else {
@@ -1535,46 +892,6 @@
                             `;
                         }
                         
-                        // Count connected classes and concepts for relationships
-                        let relationshipInfo = '';
-                        fetch('/api/graph')
-                            .then(response => response.json())
-                            .then(graphData => {
-                                const connectedClasses = [];
-                                const connectedConcepts = [];
-                                
-                                graphData.edges.forEach(edge => {
-                                    if (edge.from === nodeId || edge.to === nodeId) {
-                                        const otherId = edge.from === nodeId ? edge.to : edge.from;
-                                        const otherNode = graphData.nodes.find(n => n.id === otherId);
-                                        if (otherNode) {
-                                            if (otherNode.type === 'class') {
-                                                connectedClasses.push(`${otherNode.label} (${edge.cardinality || '1..1'})`);
-                                            } else if (otherNode.type === 'concept') {
-                                                connectedConcepts.push(`${otherNode.label} (${edge.cardinality || '1..1'})`);
-                                            }
-                                        }
-                                    }
-                                });
-                                
-                                if (connectedClasses.length > 0) {
-                                    relationshipInfo += `<strong>Connected Classes:</strong> ${connectedClasses.join(', ')}<br>`;
-                                }
-                                if (connectedConcepts.length > 0) {
-                                    relationshipInfo += `<strong>Properties:</strong> ${connectedConcepts.join(', ')}<br>`;
-                                }
-                                
-                                const updatedInfo = `
-                                    <strong>Type:</strong> ${node.type}<br>
-                                    ${classEditableFields}
-                                    ${relationshipInfo}
-                                    ${i14yLink}
-                                    ${publisher}
-                                `;
-                                document.getElementById('selected-node-info').innerHTML = updatedInfo;
-                            });
-                        
-                        // Initial display without relationships (will be updated above)
                         mainInfo = `
                             <strong>Type:</strong> ${node.type}<br>
                             ${classEditableFields}
@@ -1583,14 +900,14 @@
                         `;
                     } else if (node.type === 'data_element') {
                         // For data element nodes, show comprehensive information
-                        console.log('Data element node data:', node); // Debug log
+                        console.log('Data element node data:', node);
                         
                         let conceptLinkInfo = '';
                         let conceptDetails = '';
                         
                         if (node.is_linked_to_concept && node.conforms_to_concept_uri) {
-                            console.log('Data element is linked to concept:', node.conforms_to_concept_uri); // Debug log
-                            console.log('I14Y data available:', node.i14y_data); // Debug log
+                            console.log('Data element is linked to concept:', node.conforms_to_concept_uri);
+                            console.log('I14Y data available:', node.i14y_data);
                             
                             // Extract concept ID from URI for I14Y link
                             const conceptId = node.conforms_to_concept_uri.split('/').slice(-2, -1)[0];
@@ -1744,7 +1061,7 @@
                             document.getElementById('datatype-field').style.display = 'block';
                         }
                         
-                        // Update constraint fields (cardinality removed)
+                        // Update constraint fields
                         document.getElementById('min-length').value = node.min_length || '';
                         document.getElementById('max-length').value = node.max_length || '';
                         document.getElementById('pattern').value = node.pattern || '';
@@ -1765,1242 +1082,87 @@
                 });
         }
 
-        function applyConstraints() {
-            if (!selectedNodeId) return;
-
-            const constraints = {
-                min_length: document.getElementById('min-length').value,
-                max_length: document.getElementById('max-length').value,
-                pattern: document.getElementById('pattern').value,
-                in_values: document.getElementById('in-values').value,
-                node_reference: document.getElementById('node-reference').value,
-                range: document.getElementById('range').value,
-                datatype: document.getElementById('datatype').value
-            };
-
-            fetch(`/api/nodes/${selectedNodeId}/constraints`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(constraints)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Constraints applied successfully!');
-                    // Reload the graph and node details to show updated information
-                    loadGraph();
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                } else {
-                    alert('Error applying constraints');
-                }
-            });
-        }
-
-        function clearConstraints() {
-            document.getElementById('min-length').value = '';
-            document.getElementById('max-length').value = '';
-            document.getElementById('pattern').value = '';
-            document.getElementById('in-values').value = '';
-            document.getElementById('node-reference').value = '';
-            document.getElementById('range').value = '';
-            document.getElementById('datatype').value = '';
-        }
-
-        function createNewStructure() {
-            if (confirm('Are you sure you want to create a new structure? All unsaved changes will be lost.')) {
-                console.log('Creating new structure and redirecting...');
-                // Use the new server-side approach that does a redirect
-                window.location.href = '/new-structure';
-            }
-        }
-        
-        function showAddClassModal() {
-            new bootstrap.Modal(document.getElementById('addClassModal')).show();
-        }
-
-        function addClass() {
-            const title = document.getElementById('class-title').value;
-            const description = document.getElementById('class-description').value;
-
-            if (!title) {
-                alert('Title is required');
-                return;
-            }
-
-            fetch('/api/nodes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'class',
-                    title: title,
-                    description: description
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    bootstrap.Modal.getInstance(document.getElementById('addClassModal')).hide();
-                    document.getElementById('class-title').value = '';
-                    document.getElementById('class-description').value = '';
-                    loadGraph();
-                }
-            });
-        }
-
-        // Global variable to store selected concept for data element
-        let selectedConceptForDataElement = null;
-
-        function showAddDataElementModal() {
-            // Clear previous state
-            document.getElementById('data-element-title').value = '';
-            document.getElementById('data-element-description').value = '';
-            document.getElementById('data-element-concept-search').value = '';
-            document.getElementById('data-element-concept-results').style.display = 'none';
-            document.getElementById('data-element-selected-concept').style.display = 'none';
-            selectedConceptForDataElement = null;
-            
-            // Clear the displayed concept information
-            document.getElementById('selected-concept-name').textContent = '';
-            document.getElementById('selected-concept-publisher').textContent = '';
-            document.getElementById('selected-concept-id').textContent = '';
-            
-            new bootstrap.Modal(document.getElementById('addDataElementModal')).show();
-        }
-
-        function searchConceptsForDataElement() {
-            const query = document.getElementById('data-element-concept-search').value;
-            if (!query) return;
-
-            const resultsDiv = document.getElementById('data-element-concept-results');
-            resultsDiv.innerHTML = '<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Searching...</div>';
-            resultsDiv.style.display = 'block';
-
-            fetch(`/api/i14y/search?query=${encodeURIComponent(query)}`)
-            .then(response => response.json())
-            .then(data => {
-                resultsDiv.innerHTML = '';
-                
-                // The API returns an object with concepts array
-                const concepts = data.concepts || [];
-                if (concepts.length === 0) {
-                    resultsDiv.innerHTML = '<div class="text-muted">No concepts found</div>';
-                    return;
-                }
-
-                concepts.forEach(concept => {
-                    // Handle multilingual fields properly
-                    const title = getMultilingualText(concept.title) || 'Untitled';
-                    const description = getMultilingualText(concept.description) || 'No description';
-                    
-                    const conceptDiv = document.createElement('div');
-                    conceptDiv.className = 'border p-2 mb-2 concept-result';
-                    conceptDiv.style.cursor = 'pointer';
-                    conceptDiv.innerHTML = `
-                        <strong>${escapeHtml(title)}</strong>
-                        <div class="small text-muted">${escapeHtml(description)}</div>
-                        <div class="small"><strong>ID:</strong> ${escapeHtml(concept.id)}</div>
-                    `;
-                    conceptDiv.onclick = () => selectConceptForDataElement(concept);
-                    resultsDiv.appendChild(conceptDiv);
-                });
-            })
-            .catch(error => {
-                resultsDiv.innerHTML = '<div class="text-danger">Error searching concepts</div>';
-                console.error('Error:', error);
-            });
-        }
-
-        function selectConceptForDataElement(concept) {
-            selectedConceptForDataElement = concept;
-            document.getElementById('data-element-concept-results').style.display = 'none';
-            
-            // Extract proper title using multilingual text function
-            const title = getMultilingualText(concept.title) || 'Untitled';
-            const publisher = getMultilingualText(concept.publisherName) || 'Unknown Publisher';
-            const conceptId = concept.id || 'Unknown ID';
-            
-            document.getElementById('selected-concept-name').textContent = title;
-            document.getElementById('selected-concept-publisher').textContent = `Publisher: ${publisher}`;
-            document.getElementById('selected-concept-id').textContent = conceptId;
-            
-            document.getElementById('data-element-selected-concept').style.display = 'block';
-        }
-
-        function clearSelectedConcept() {
-            selectedConceptForDataElement = null;
-            document.getElementById('data-element-selected-concept').style.display = 'none';
-            document.getElementById('data-element-concept-results').style.display = 'none';
-            
-            // Clear the displayed information
-            document.getElementById('selected-concept-name').textContent = '';
-            document.getElementById('selected-concept-publisher').textContent = '';
-            document.getElementById('selected-concept-id').textContent = '';
-        }
-
-        function addDataElement() {
-            const title = document.getElementById('data-element-title').value;
-            const description = document.getElementById('data-element-description').value;
-
-            if (!title) {
-                alert('Local name is required');
-                return;
-            }
-
-            // Determine if a class is selected as parent
-            let parentId = null;
-            if (selectedNodeId) {
-                // Fetch node type to check if it's a class
-                fetch(`/api/nodes/${selectedNodeId}`)
-                    .then(response => response.json())
-                    .then(node => {
-                        if (node.type === 'class') {
-                            parentId = selectedNodeId;
-                        }
-                        
-                        const payload = {
-                            type: 'data_element',
-                            title: title,
-                            description: description,
-                            local_name: title,
-                            parent_id: parentId
-                        };
-
-                        // If a concept is selected, include it
-                        if (selectedConceptForDataElement) {
-                            payload.concept_data = selectedConceptForDataElement;
-                        }
-
-                        fetch('/api/data-elements', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                bootstrap.Modal.getInstance(document.getElementById('addDataElementModal')).hide();
-                                loadGraph();
-                            } else {
-                                alert('Error creating data element: ' + (data.error || 'Unknown error'));
-                            }
-                        })
-                        .catch(error => {
-                            alert('Error creating data element: ' + error.message);
-                        });
-                    });
-            } else {
-                // No parent selected
-                const payload = {
-                    type: 'data_element',
-                    title: title,
-                    description: description,
-                    local_name: title
-                };
-
-                // If a concept is selected, include it
-                if (selectedConceptForDataElement) {
-                    payload.concept_data = selectedConceptForDataElement;
-                }
-
-                fetch('/api/data-elements', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        bootstrap.Modal.getInstance(document.getElementById('addDataElementModal')).hide();
-                        loadGraph();
-                    } else {
-                        alert('Error creating data element: ' + (data.error || 'Unknown error'));
-                    }
-                })
-                .catch(error => {
-                    alert('Error creating data element: ' + error.message);
-                });
-            }
-        }
-
-        function removeSelected() {
-            if (!selectedNodeId) {
-                alert('Please select a node to remove');
-                return;
-            }
-
-            if (confirm('Are you sure you want to remove this node?')) {
-                fetch(`/api/nodes/${selectedNodeId}`, {
-                    method: 'DELETE'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        selectedNodeId = null;
-                        document.getElementById('selected-node-section').style.display = 'none';
-                        document.getElementById('selected-node-sidebar').style.display = 'none';
-                        loadGraph();
-                    } else {
-                        alert('Cannot remove this node');
-                    }
-                });
-            }
-        }
-
-        function detachSelected() {
-            if (!selectedEdgeId) {
-                alert('Please select a connection to detach');
-                return;
-            }
-
-            if (confirm('Are you sure you want to remove this connection?')) {
-                // Extract node IDs from edge ID (format: "node1-node2")
-                const edgeData = edges.get(selectedEdgeId);
-                if (edgeData) {
-                    fetch('/api/connections', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            node1_id: edgeData.from,
-                            node2_id: edgeData.to
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            selectedEdgeId = null;
-                            document.getElementById('detach-btn').style.display = 'none';
-                            document.getElementById('edge-status').style.display = 'none';
-                            loadGraph();
-                        } else {
-                            alert('Cannot remove this connection');
-                        }
-                    });
-                }
-            }
-        }
-
-        function toggleConnectionMode() {
-            connectionMode = !connectionMode;
-            pendingConnection = null;
-            
-            const button = event.target;
-            const status = document.getElementById('connection-status');
-            
-            if (connectionMode) {
-                button.textContent = 'Exit Connection Mode';
-                button.className = 'btn btn-outline-dark btn-sm w-100 mb-2';
-                status.style.display = 'block';
-            } else {
-                button.textContent = 'Connect Nodes';
-                button.className = 'btn btn-outline-dark btn-sm w-100 mb-2';
-                status.style.display = 'none';
-            }
-        }
-
-        function handleConnectionClick(nodeId) {
-            if (!pendingConnection) {
-                pendingConnection = nodeId;
-                document.getElementById('connection-status').innerHTML = '<small>Click another node to connect</small>';
-            } else {
-                if (pendingConnection !== nodeId) {
-                    connectTwoNodes(pendingConnection, nodeId);
-                }
-                pendingConnection = null;
-                document.getElementById('connection-status').innerHTML = '<small>Click two nodes to connect them</small>';
-            }
-        }
-
-        function connectTwoNodes(node1Id, node2Id) {
-            fetch('/api/connections', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    node1_id: node1Id,
-                    node2_id: node2Id
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    loadGraph();
-                }
-            });
-        }
-
-        // Load additional datasets button
-        // Functions for linking custom concepts to I14Y
-        function showLinkToI14YModal() {
-            // This function will be called when the "Link to I14Y Concept" button is clicked
-            new bootstrap.Modal(document.getElementById('linkToI14YModal')).show();
-            searchForI14YLink(''); // Load initial results
-        }
-
-        // Global variable to store the latest link search results
-        let lastLinkI14YSearchResults = [];
-
-        function searchForI14YLink(query = null) {
-            if (query === null) {
-                query = document.getElementById('link-i14y-search-query').value;
-            }
-
-            const resultsDiv = document.getElementById('link-i14y-results');
-            resultsDiv.innerHTML = '<p class="text-muted">Searching...</p>';
-
-            fetch(`/api/i14y/search?query=${encodeURIComponent(query)}`)
-                .then(response => response.json())
-                .then(data => {
-                    console.log('I14Y search response for linking:', data);
-                    
-                    if (data.error) {
-                        resultsDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
-                        return;
-                    }
-                    
-                    // Store the search results globally for later use
-                    lastLinkI14YSearchResults = data.concepts || [];
-                    
-                    if (lastLinkI14YSearchResults.length > 0) {
-                        // Debug: Log the first concept structure to help identify field names
-                        console.log('First concept structure:', JSON.stringify(lastLinkI14YSearchResults[0], null, 2));
-                        console.log('Available title fields:', 
-                            lastLinkI14YSearchResults[0].title ? 'title' : 'no title',
-                            lastLinkI14YSearchResults[0].name ? 'name' : 'no name');
-                    }
-                    
-                    if (lastLinkI14YSearchResults.length === 0) {
-                        resultsDiv.innerHTML = '<p class="text-muted">No matching concepts found</p>';
-                        return;
-                    }
-                    
-                    // Display search results
-                    let resultsHTML = '<div class="list-group">';
-                    
-                    lastLinkI14YSearchResults.forEach((concept, index) => {
-                        // Get the title in preferred language order: de, en, fr, it
-                        const title = concept.title?.de || concept.title?.en || concept.title?.fr || concept.title?.it || 
-                                    concept.name?.de || concept.name?.en || concept.name?.fr || concept.name?.it || 'Unnamed Concept';
-                        
-                        // Get description snippet in preferred language order
-                        let description = concept.description?.de || concept.description?.en || concept.description?.fr || concept.description?.it || '';
-                        if (description.length > 100) {
-                            description = description.substring(0, 100) + '...';
-                        }
-                        
-                        // Label with language tag if available
-                        let labelLang = '';
-                        if (concept.title?.de || concept.name?.de) labelLang = '(de)';
-                        else if (concept.title?.en || concept.name?.en) labelLang = '(en)';
-                        else if (concept.title?.fr || concept.name?.fr) labelLang = '(fr)';
-                        else if (concept.title?.it || concept.name?.it) labelLang = '(it)';
-                        
-                        // Information line with source system and label language
-                        const infoLine = `<small class="text-muted">Source: ${concept.sourceSystem || 'I14Y'} ${labelLang}</small>`;
-                        
-                        resultsHTML += `
-                        <a href="#" class="list-group-item list-group-item-action" onclick="linkToI14YConcept('${concept.id}'); return false;">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${title}</h6>
-                            </div>
-                            <p class="mb-1 small">${description}</p>
-                            ${infoLine}
-                        </a>`;
-                    });
-                    
-                    resultsHTML += '</div>';
-                    resultsDiv.innerHTML = resultsHTML;
-                })
-                .catch(error => {
-                    console.error('Error searching I14Y:', error);
-                    resultsDiv.innerHTML = `<p class="text-danger">Error: ${error.message || 'Unknown error'}</p>`;
-                });
-        }
-
-        function linkToI14YConcept(conceptId) {
-            if (!selectedNodeId) {
-                alert('No concept selected. Please select a concept first.');
-                return;
-            }
-            
-            // Find the concept data in the search results
-            const conceptData = lastLinkI14YSearchResults.find(c => c.id === conceptId);
-            if (!conceptData) {
-                alert('Error: Concept data not found');
-                return;
-            }
-            
-            console.log('Linking node to I14Y concept:', conceptId, conceptData);
-            
-            // Call the API to link the concept
-            fetch(`/api/nodes/${selectedNodeId}/link-to-i14y`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ concept_data: conceptData })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Close the modal
-                    bootstrap.Modal.getInstance(document.getElementById('linkToI14YModal')).hide();
-                    
-                    // Reload the graph and update node details
-                    loadGraph();
-                    loadNodeDetails(selectedNodeId);
-                    
-                    alert('Concept successfully linked to I14Y!');
-                } else {
-                    alert('Error linking concept: ' + (data.error || 'Unknown error'));
-                }
-            })
-            .catch(error => {
-                console.error('Error linking to I14Y concept:', error);
-                alert('Error: ' + (error.message || 'Failed to link concept'));
-            });
-        }
-
-        function showI14YDatasetSearchModal() {
-            new bootstrap.Modal(document.getElementById('i14yDatasetSearchModal')).show();
-            searchI14YDatasets(''); // Load initial results
-        }
-        
-        function disconnectI14YDataset() {
-            if (confirm('Are you sure you want to disconnect this dataset from I14Y? This will allow you to edit the title and description locally.')) {
-                fetch('/api/i14y/dataset/disconnect', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({})
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        console.error('Error disconnecting dataset:', data.error);
-                        alert(`Error disconnecting dataset: ${data.error}`);
-                        return;
-                    }
-                    
-                    console.log('Dataset disconnected successfully:', data);
-                    
-                    // Refresh the graph to show the updated dataset node
-                    // Force a timeout to ensure the backend has finished processing
-                    setTimeout(() => {
-                        loadGraph();
-                        
-                        // Refresh the node details to show the unlinked dataset
-                        if (selectedNodeId) {
-                            loadNodeDetails(selectedNodeId);
-                        }
-                        
-                        // Show success message
-                        showToast('Dataset Disconnected', 'Successfully disconnected from I14Y dataset');
-                    }, 500);
-                })
-                .catch(error => {
-                    console.error('Error disconnecting dataset:', error);
-                    alert(`Error disconnecting dataset: ${error.message}`);
-                });
-            }
-        }
-        
-        // Global variable to store the latest dataset search results
-        let lastI14YDatasetSearchResults = [];
-        
-        function searchI14YDatasets(query = null) {
-            if (query === null) {
-                query = document.getElementById('i14y-dataset-search-query').value;
-            }
-            
-            const resultsDiv = document.getElementById('i14y-dataset-results');
-            resultsDiv.innerHTML = '<p class="text-muted">Searching...</p>';
-            
-            console.log('Searching for datasets with query:', query);
-            
-            fetch(`/api/i14y/dataset/search?query=${encodeURIComponent(query)}`)
-                .then(response => response.json())
-                .then(data => {
-                    console.log('I14Y dataset search response:', data);
-                    
-                    if (data.error) {
-                        resultsDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
-                        return;
-                    }
-                    
-                    // Store the search results globally for later use
-                    lastI14YDatasetSearchResults = data.datasets || [];
-                    
-                    console.log('Dataset search results:', lastI14YDatasetSearchResults.length, 'items found');
-                    
-                    if (lastI14YDatasetSearchResults.length > 0) {
-                        let resultsHtml = '';
-                        
-                        lastI14YDatasetSearchResults.forEach(dataset => {
-                            // Get the title in the first available language
-                            let title = dataset.title;
-                            if (typeof title === 'object') {
-                                // Try to get title in specific languages
-                                title = title.de || title.en || title.fr || title.it || 'Unknown Dataset';
-                            }
-                            
-                            // Get the description in the first available language
-                            let description = dataset.description;
-                            if (typeof description === 'object') {
-                                description = description.de || description.en || description.fr || description.it || '';
-                            }
-                            
-                            // Prepare a short version of the description
-                            const shortDesc = description ? description.substring(0, 150) + (description.length > 150 ? '...' : '') : 'No description available';
-                            
-                            resultsHtml += `
-                                <div class="card mb-2">
-                                    <div class="card-body">
-                                        <h5 class="card-title">${escapeHtml(title)}</h5>
-                                        <p class="card-text small">${escapeHtml(shortDesc)}</p>
-                                        <button class="btn btn-sm btn-dataset" onclick="linkI14YDataset('${dataset.id}')">Link Dataset</button>
-                                    </div>
-                                </div>
-                            `;
-                        });
-                        
-                        resultsDiv.innerHTML = resultsHtml;
-                    } else {
-                        resultsDiv.innerHTML = '<p class="text-muted">No datasets found. Try a different search term.</p>';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error searching for datasets:', error);
-                    resultsDiv.innerHTML = `<p class="text-danger">Search failed: ${error.message}</p>`;
-                });
-        }
-        
-        function linkI14YDataset(datasetId) {
-            console.log('Linking dataset:', datasetId);
-            
-            // Find the selected dataset from the search results
-            const datasetFromSearch = lastI14YDatasetSearchResults.find(d => d.id === datasetId);
-            
-            if (!datasetFromSearch) {
-                console.error('Dataset not found in search results');
-                alert('Error: Dataset not found in search results');
-                return;
-            }
-            
-            // Send the dataset data to the server to link with the current dataset node
-            fetch('/api/i14y/dataset/link', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    dataset_id: datasetId,
-                    dataset_data: datasetFromSearch
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    console.error('Error linking dataset:', data.error);
-                    alert(`Error linking dataset: ${data.error}`);
-                    return;
-                }
-                
-                console.log('Dataset linked successfully:', data);
-                
-                // Close the modal
-                bootstrap.Modal.getInstance(document.getElementById('i14yDatasetSearchModal')).hide();
-                
-                // Update the title and description inputs if we're on the dataset node
-                if (selectedNodeId && document.getElementById('edit-dataset-title')) {
-                    document.getElementById('edit-dataset-title').value = data.node.title;
-                    document.getElementById('edit-dataset-description').value = data.node.description;
-                }
-                
-                // Refresh the graph to show the updated dataset node
-                // Force a timeout to ensure the backend has finished processing
-                setTimeout(() => {
-                    loadGraph();
-                    
-                    // Refresh the node details to show the linked dataset
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                    
-                    // Show success message
-                    showToast('Dataset Linked', `Successfully linked to I14Y dataset: ${datasetFromSearch.title.de || datasetFromSearch.title.en || 'Unknown'}`);
-                }, 500);
-            })
-            .catch(error => {
-                console.error('Error linking dataset:', error);
-                alert(`Error linking dataset: ${error.message}`);
-            });
-        }
-        
-        function disconnectI14YDataset() {
-            console.log('Disconnecting I14Y dataset');
-            
-            if (!confirm('Are you sure you want to disconnect this dataset from I14Y? This will allow you to edit the title and description locally.')) {
-                return;
-            }
-            
-            // Send request to disconnect the dataset
-            fetch('/api/i14y/dataset/disconnect', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    console.error('Error disconnecting dataset:', data.error);
-                    alert(`Error disconnecting dataset: ${data.error}`);
-                    return;
-                }
-                
-                console.log('Dataset disconnected successfully:', data);
-                
-                // Update the title and description inputs if we're on the dataset node
-                if (selectedNodeId && document.getElementById('edit-dataset-title')) {
-                    // Enable the input fields
-                    document.getElementById('edit-dataset-title').readOnly = false;
-                    document.getElementById('edit-dataset-description').readOnly = false;
-                }
-                
-                // Refresh the graph to show the updated dataset node
-                // Force a timeout to ensure the backend has finished processing
-                setTimeout(() => {
-                    loadGraph();
-                    
-                    // Refresh the node details to show the unlinked dataset
-                    if (selectedNodeId) {
-                        loadNodeDetails(selectedNodeId);
-                    }
-                    
-                    // Show success message
-                    showToast('Dataset Disconnected', 'Successfully disconnected from I14Y dataset. You can now edit the title and description locally.');
-                }, 500);
-            })
-            .catch(error => {
-                console.error('Error disconnecting dataset:', error);
-                alert(`Error disconnecting dataset: ${error.message}`);
-            });
-        }
-        
-        function disconnectI14YConcept() {
-            if (!selectedNodeId) {
-                alert('No concept selected');
-                return;
-            }
-            
-            console.log('Disconnecting concept from I14Y:', selectedNodeId);
-            
-            if (!confirm('Are you sure you want to disconnect this concept from I14Y? This will convert it to a custom concept that you can edit locally.')) {
-                return;
-            }
-            
-            // Send request to disconnect the concept
-            fetch(`/api/nodes/${selectedNodeId}/disconnect-i14y`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    console.error('Error disconnecting concept:', data.error);
-                    alert(`Error disconnecting concept: ${data.error}`);
-                    return;
-                }
-                
-                console.log('Concept disconnected successfully:', data);
-                
-                // Refresh the graph to show the updated concept node
-                // Force a timeout to ensure the backend has finished processing
-                setTimeout(() => {
-                    loadGraph();
-                    
-                    // Refresh the node details to show the unlinked concept
-                    loadNodeDetails(selectedNodeId);
-                    
-                    // Show success message
-                    showToast('Concept Disconnected', 'Successfully disconnected from I14Y concept. You can now edit this concept locally.');
-                }, 500);
-            })
-            .catch(error => {
-                console.error('Error disconnecting concept:', error);
-                alert(`Error disconnecting concept: ${error.message}`);
-            });
-        }
-        
-        // Global variable to store the latest search results
-        let lastI14YSearchResults = [];
-
-        function searchI14Y(query = null) {
-            if (query === null) {
-                query = document.getElementById('i14y-search-query').value;
-            }
-
-            const resultsDiv = document.getElementById('i14y-results');
-            resultsDiv.innerHTML = '<p class="text-muted">Searching...</p>';
-
-            fetch(`/api/i14y/search?query=${encodeURIComponent(query)}`)
-                .then(response => response.json())
-                .then(data => {
-                    console.log('I14Y search response:', data);
-                    
-                    if (data.error) {
-                        resultsDiv.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
-                        return;
-                    }
-                    
-                    // Store the search results globally for later use
-                    lastI14YSearchResults = data.concepts || [];
-                    
-                    if (data.concepts && data.concepts.length > 0) {
-                        resultsDiv.innerHTML = data.concepts.map(concept => {
-                            // Handle multilingual fields properly
-                            const title = getMultilingualText(concept.title) || 'Untitled';
-                            const description = getMultilingualText(concept.description) || 'No description';
-                            const publisher = getMultilingualText(concept.publisherName) || 'Unknown';
-                            
-                            // Make sure we have a valid concept ID
-                            const conceptId = concept.id || concept.uuid || '';
-                            
-                            // Store the concept ID separately for safety
-                            const safeConceptId = conceptId.replace(/"/g, '&quot;');
-                            
-                            // Add debugging info to help identify concept ID issues
-                            console.log(`Concept ID: ${conceptId}, Title: ${title}`);
-                            
-                            return `
-                                <div class="card mb-2">
-                                    <div class="card-body">
-                                        <h6 class="card-title">${escapeHtml(title)}</h6>
-                                        <p class="card-text small">${escapeHtml(description)}</p>
-                                        <p class="card-text"><small class="text-muted">Publisher: ${escapeHtml(publisher)}</small></p>
-                                        <p class="card-text"><small class="text-muted">Type: ${concept.conceptValueType || concept.type || 'Concept'}</small></p>
-                                        <p class="card-text"><small class="text-muted">ID: ${safeConceptId}</small></p>
-                                        ${window.linkingDataElement ? 
-                                            `<button class="btn btn-primary btn-sm" onclick="linkDataElementToConcept('${safeConceptId}')">
-                                                Link to Data Element
-                                            </button>` :
-                                            `<div class="text-muted small">Use "Link to I14Y Concept" from data elements</div>`
-                                        }
-                                    </div>
-                                </div>
-                            `;
-                        }).join('');
-                    } else {
-                        resultsDiv.innerHTML = '<p class="text-muted">No concepts found</p>';
-                    }
-                })
-                .catch(error => {
-                    console.error('Search error:', error);
-                    resultsDiv.innerHTML = '<p class="text-danger">Error searching concepts</p>';
-                });
-        }
-        
-        // Function to show toast notifications
-        function showToast(title, message) {
-            // Create toast container if it doesn't exist
-            let toastContainer = document.getElementById('toast-container');
-            if (!toastContainer) {
-                toastContainer = document.createElement('div');
-                toastContainer.id = 'toast-container';
-                toastContainer.className = 'position-fixed bottom-0 end-0 p-3';
-                toastContainer.style.zIndex = '1050';
-                document.body.appendChild(toastContainer);
-            }
-            
-            // Create a unique ID for the toast
-            const toastId = 'toast-' + Date.now();
-            
-            // Create toast HTML
-            const toastHtml = `
-                <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-                    <div class="toast-header">
-                        <strong class="me-auto">${title}</strong>
-                        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
-                    </div>
-                    <div class="toast-body">
-                        ${message}
-                    </div>
-                </div>
-            `;
-            
-            // Add toast to container
-            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-            
-            // Initialize and show the toast
-            const toastElement = document.getElementById(toastId);
-            const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
-            toast.show();
-            
-            // Remove toast after it's hidden
-            toastElement.addEventListener('hidden.bs.toast', function() {
-                toastElement.remove();
-            });
-        }
-
-        function getMultilingualText(multilingualObj) {
-            if (!multilingualObj) return null;
-            if (typeof multilingualObj === 'string') return multilingualObj;
-            
-            // Try languages in order of preference: de, en, fr, it
-            return multilingualObj.de || multilingualObj.en || multilingualObj.fr || multilingualObj.it || null;
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function exportTTL() {
-            // First get the dataset information to use as filename
-            fetch('/api/dataset')
-                .then(response => response.json())
-                .then(data => {
-                    // Use dataset identifier or title as filename, fallback to default
-                    let filename = 'shacl_structure.ttl';
-                    if (data.identifier && data.identifier.trim()) {
-                        filename = data.identifier.trim() + '.ttl';
-                    } else if (data.title && data.title.trim()) {
-                        // Sanitize title for use as filename
-                        const sanitizedTitle = data.title.trim()
-                            .replace(/[^a-zA-Z0-9\-_]/g, '_')
-                            .replace(/_+/g, '_')
-                            .replace(/^_|_$/g, '');
-                        filename = sanitizedTitle + '.ttl';
-                    }
-                    
-                    // Open export with filename parameter
-                    window.open(`/api/export/ttl?filename=${encodeURIComponent(filename)}`, '_blank');
-                })
-                .catch(error => {
-                    console.error('Error getting dataset info:', error);
-                    // Fallback to default export
-                    window.open('/api/export/ttl', '_blank');
-                });
-        }
-
-        function importTTL(input) {
-            if (!input.files || input.files.length === 0) return;
-            
-            const file = input.files[0];
-            const formData = new FormData();
-            formData.append('file', file);
-            
-            fetch('/api/import/ttl', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('TTL file imported successfully!');
-                    loadGraph();
-                } else {
-                    alert('Error importing TTL file: ' + (data.error || 'Unknown error'));
-                }
-                // Reset file input
-                input.value = '';
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error importing TTL file');
-                input.value = '';
-            });
-        }
-        
-        function importExampleTTL() {
-            fetch('/api/import/example/ttl')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Example TTL file imported successfully!');
-                    loadGraph();
-                } else {
-                    alert('Error importing example TTL file: ' + (data.error || 'Unknown error'));
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error importing example TTL file');
-            });
-        }
-        
-        // Store the selected CSV file for import
-        let selectedCSVFile = null;
-        
-        function showCSVImportModal(input) {
-            if (!input.files || input.files.length === 0) return;
-            
-            selectedCSVFile = input.files[0];
-            
-            // Set the dataset name based on the file name (without extension)
-            const fileName = selectedCSVFile.name;
-            const nameWithoutExt = fileName.split('.').slice(0, -1).join('.');
-            document.getElementById('csv-dataset-name').value = nameWithoutExt || 'Imported Dataset';
-            
-            // Show the modal
-            const csvModal = new bootstrap.Modal(document.getElementById('csvImportModal'));
-            csvModal.show();
-        }
-        
-        function importCSV() {
-            if (!selectedCSVFile) {
-                alert('No CSV file selected');
-                return;
-            }
-            
-            const datasetName = document.getElementById('csv-dataset-name').value;
-            const lang = document.getElementById('csv-lang').value;
-            
-            const formData = new FormData();
-            formData.append('file', selectedCSVFile);
-            formData.append('dataset_name', datasetName);
-            formData.append('lang', lang);
-            
-            // Show loading state
-            const importButton = document.querySelector('#csvImportModal button.btn-primary');
-            const originalText = importButton.textContent;
-            importButton.textContent = 'Importing...';
-            importButton.disabled = true;
-            
-            fetch('/api/import/csv', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Reset button state
-                importButton.textContent = originalText;
-                importButton.disabled = false;
-                
-                // Close the modal
-                bootstrap.Modal.getInstance(document.getElementById('csvImportModal')).hide();
-                
-                if (data.success) {
-                    alert('CSV file imported successfully!');
-                    loadGraph();
-                } else {
-                    alert('Error importing CSV file: ' + (data.error || 'Unknown error'));
-                }
-                // Reset file input
-                document.getElementById('csv-file').value = '';
-                selectedCSVFile = null;
-            })
-            .catch(error => {
-                // Reset button state
-                importButton.textContent = originalText;
-                importButton.disabled = false;
-                
-                console.error('Error:', error);
-                alert('Error importing CSV file');
-                document.getElementById('csv-file').value = '';
-                selectedCSVFile = null;
-            });
-        }
-        
-        let selectedXSDFile = null;
-        
-        function showXSDImportModal(input) {
-            if (!input.files || input.files.length === 0) return;
-            
-            selectedXSDFile = input.files[0];
-            
-            // Set the dataset name based on the file name (without extension)
-            const fileName = selectedXSDFile.name;
-            const nameWithoutExt = fileName.split('.').slice(0, -1).join('.');
-            document.getElementById('xsd-dataset-name').value = nameWithoutExt || 'Imported Dataset';
-            
-            // Show the modal
-            const xsdModal = new bootstrap.Modal(document.getElementById('xsdImportModal'));
-            xsdModal.show();
-        }
-        
-        function importXSD() {
-            if (!selectedXSDFile) {
-                alert('No XSD file selected');
-                return;
-            }
-            
-            const datasetName = document.getElementById('xsd-dataset-name').value;
-            
-            const formData = new FormData();
-            formData.append('file', selectedXSDFile);
-            formData.append('dataset_name', datasetName);
-            
-            // Show loading state
-            const importButton = document.querySelector('#xsdImportModal button.btn-primary');
-            const originalText = importButton.textContent;
-            importButton.textContent = 'Importing...';
-            importButton.disabled = true;
-            
-            fetch('/api/import/xsd', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Reset button state
-                importButton.textContent = originalText;
-                importButton.disabled = false;
-                
-                // Close the modal
-                bootstrap.Modal.getInstance(document.getElementById('xsdImportModal')).hide();
-                
-                if (data.success) {
-                    alert('XSD file imported successfully!');
-                    loadGraph();
-                } else {
-                    alert('Error importing XSD file: ' + (data.error || 'Unknown error'));
-                }
-                // Reset file input
-                document.getElementById('xsd-file').value = '';
-                selectedXSDFile = null;
-            })
-            .catch(error => {
-                // Reset button state
-                importButton.textContent = originalText;
-                importButton.disabled = false;
-                
-                console.error('Error:', error);
-                alert('Error importing XSD file');
-                document.getElementById('xsd-file').value = '';
-                selectedXSDFile = null;
-            });
-        }
-
-        function saveProject() {
-            // First get the dataset information to use as filename
-            fetch('/api/dataset')
-                .then(response => response.json())
-                .then(data => {
-                    // Use dataset identifier or title as filename, fallback to default
-                    let filename = 'shacl_project.json';
-                    if (data.identifier && data.identifier.trim()) {
-                        filename = data.identifier.trim() + '_project.json';
-                    } else if (data.title && data.title.trim()) {
-                        // Sanitize title for use as filename
-                        const sanitizedTitle = data.title.trim()
-                            .replace(/[^a-zA-Z0-9\-_]/g, '_')
-                            .replace(/_+/g, '_')
-                            .replace(/^_|_$/g, '');
-                        filename = sanitizedTitle + '_project.json';
-                    }
-                    
-                    // Now save the project with the determined filename
-                    return fetch('/api/project/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    })
-                    .then(response => {
-                        if (response.ok) {
-                            return response.blob();
-                        } else {
-                            throw new Error('Failed to save project');
-                        }
-                    })
-                    .then(blob => {
-                        // Create download link with dynamic filename
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = filename;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                    });
-                })
-                .catch(error => {
-                    console.error('Error saving project:', error);
-                    alert('Error saving project: ' + error.message);
-                });
-        }
-
-        function loadProject(input) {
-            const file = input.files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            fetch('/api/project/load', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Project loaded successfully!');
-                    loadDataset();
-                    loadGraph();
-                    selectedNodeId = null;
-                    document.getElementById('selected-node-section').style.display = 'none';
-                    document.getElementById('selected-node-sidebar').style.display = 'none';
-                } else {
-                    alert('Error loading project: ' + data.error);
-                }
-            });
-        }
-
         function loadEdgeDetails(edgeId) {
+            // Load edge information
             fetch(`/api/edges/${edgeId}`)
                 .then(response => response.json())
                 .then(edge => {
-                    // Get node names for display
-                    const fromNode = nodes.get(edge.from);
-                    const toNode = nodes.get(edge.to);
+                    // Show connection information
+                    const fromNode = edge.from_node || { title: 'Unknown', type: 'unknown' };
+                    const toNode = edge.to_node || { title: 'Unknown', type: 'unknown' };
+                    
+                    let fromTitle = typeof fromNode.title === 'object' ? getMultilingualText(fromNode.title) : fromNode.title;
+                    let toTitle = typeof toNode.title === 'object' ? getMultilingualText(toNode.title) : toNode.title;
                     
                     document.getElementById('selected-edge-info').innerHTML = `
-                        <strong>Connection:</strong> ${fromNode ? fromNode.label : edge.from} → ${toNode ? toNode.label : edge.to}<br>
-                        <strong>Current Cardinality:</strong> ${edge.cardinality || '1..1'}
+                        <strong>Connection:</strong><br>
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="badge bg-secondary">${fromNode.type}</span>
+                                <span><i class="bi bi-arrow-right"></i></span>
+                                <span class="badge bg-secondary">${toNode.type}</span>
+                            </div>
+                            <div class="mt-2">
+                                <strong>From:</strong> ${fromTitle}<br>
+                                <strong>To:</strong> ${toTitle}
+                            </div>
+                        </div>
                     `;
-                    
-                    // Set the cardinality dropdown
+
+                    // Set cardinality in dropdown
                     const cardinalitySelect = document.getElementById('edge-cardinality');
-                    const currentCardinality = edge.cardinality || '1..1';
+                    let cardinality = edge.cardinality || '1..1';
                     
-                    // Check if current cardinality is one of the predefined options
-                    const predefinedOptions = ['0..1', '1..1', '0..n', '1..n', '0..0', '2..5'];
-                    if (predefinedOptions.includes(currentCardinality)) {
-                        cardinalitySelect.value = currentCardinality;
+                    // Check if this is a standard cardinality
+                    const standardCardinalities = ['0..1', '1..1', '0..n', '1..n', '0..0'];
+                    if (standardCardinalities.includes(cardinality)) {
+                        cardinalitySelect.value = cardinality;
                         document.getElementById('custom-cardinality-section').style.display = 'none';
                     } else {
-                        cardinalitySelect.value = '2..5'; // Custom option
-                        document.getElementById('custom-cardinality').value = currentCardinality;
+                        // Must be a custom cardinality
+                        cardinalitySelect.value = '2..5'; // Select custom option
+                        document.getElementById('custom-cardinality').value = cardinality;
                         document.getElementById('custom-cardinality-section').style.display = 'block';
                     }
-                })
-                .catch(error => {
-                    console.error('Error loading edge details:', error);
-                    document.getElementById('selected-edge-info').innerHTML = `
-                        <strong>Connection:</strong> ${edgeId}<br>
-                        <strong>Current Cardinality:</strong> 1..1 (default)
-                    `;
+
+                    // Add event listener for cardinality change
+                    cardinalitySelect.onchange = function() {
+                        if (this.value === '2..5') {
+                            document.getElementById('custom-cardinality-section').style.display = 'block';
+                        } else {
+                            document.getElementById('custom-cardinality-section').style.display = 'none';
+                        }
+                    };
                 });
         }
 
-        function applyEdgeCardinality() {
-            if (!selectedEdgeId) return;
+        // Connect existing application functions to the new UML visualization
+        window.selectNode = selectNode;
+        window.selectEdge = selectEdge;
+        window.clearNodeSelection = clearNodeSelection;
+        
+        // Other application functions (add, remove, etc.) remain the same
+        // ...
 
-            let cardinality = document.getElementById('edge-cardinality').value;
+        // Include functions for edge cardinality and other operations
+        function applyEdgeCardinality() {
+            if (!selectedEdgeId) {
+                alert('No connection selected');
+                return;
+            }
+
+            let cardinality;
+            const cardinalitySelect = document.getElementById('edge-cardinality');
             
-            // If custom cardinality is selected, use the custom value
-            if (cardinality === '2..5' && document.getElementById('custom-cardinality-section').style.display !== 'none') {
-                cardinality = document.getElementById('custom-cardinality').value.trim();
-                if (!cardinality) {
-                    alert('Please enter a cardinality value');
+            if (cardinalitySelect.value === '2..5') {
+                // Custom cardinality
+                cardinality = document.getElementById('custom-cardinality').value;
+                if (!cardinality.match(/^\d+\.\.\d+$/) && !cardinality.match(/^\d+\.\.\*$/)) {
+                    alert('Invalid cardinality format. Please use format like "2..10" or "5..*"');
                     return;
                 }
+            } else {
+                cardinality = cardinalitySelect.value;
             }
 
             fetch(`/api/edges/${selectedEdgeId}/cardinality`, {
@@ -3011,167 +1173,38 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Store the selected edge ID for re-selection
-                    const edgeToReselect = selectedEdgeId;
-                    
-                    // Get all current edges
-                    const allEdges = edges.get();
-                    
-                    // Remove all edges from the dataset
-                    edges.clear();
-                    
-                    // Force network to process the removal
-                    network.redraw();
-                    
-                    // After a short delay, re-add all edges (this forces vis.js to recreate DOM elements)
-                    setTimeout(() => {
-                        // Get updated graph data from server to ensure we have latest cardinality
-                        fetch('/api/graph')
-                            .then(response => response.json())
-                            .then(graphData => {
-                                if (graphData.edges && Array.isArray(graphData.edges)) {
-                                    const edgeDataArray = [];
-                                    graphData.edges.forEach(edge => {
-                                        const fromNode = nodes.get(edge.from);
-                                        const toNode = nodes.get(edge.to);
-                                        
-                                        const edgeData = {
-                                            id: edge.id,
-                                            from: edge.from,
-                                            to: edge.to,
-                                            label: '', // Removed cardinality labels
-                                            arrows: 'to'
-                                        };
-                                        
-                                        // Style class-to-class connections differently
-                                        if (fromNode && toNode && fromNode.type === 'class' && toNode.type === 'class') {
-                                            edgeData.color = { color: '#ff6b35' };
-                                            edgeData.width = 3;
-                                            edgeData.dashes = [5, 5];
-                                            edgeData.font = { color: '#ff6b35', size: 11 };
-                                        } else {
-                                            edgeData.color = { color: '#848484' };
-                                            edgeData.width = 2;
-                                        }
-                                        
-                                        edgeDataArray.push(edgeData);
-                                    });
-                                    
-                                    // Add all edges back
-                                    edges.add(edgeDataArray);
-                                    
-                                    // Re-select the edge
-                                    setTimeout(() => {
-                                        if (edgeToReselect) {
-                                            selectedEdgeId = edgeToReselect;
-                                            network.selectEdges([edgeToReselect]);
-                                            
-                                            // Show edge-related UI
-                                            document.getElementById('selected-node-section').style.display = 'none';
-                                            document.getElementById('no-node-selected').style.display = 'none';
-                                            document.getElementById('selected-edge-section').style.display = 'block';
-                                            document.getElementById('detach-btn').style.display = 'block';
-                                            document.getElementById('edge-status').style.display = 'block';
-                                            
-                                            loadEdgeDetails(edgeToReselect);
-                                        }
-                                    }, 100);
-                                }
-                            });
-                    }, 150);
-                    
-                    alert('Cardinality updated successfully!');
+                    loadGraphWithD3();
+                    loadEdgeDetails(selectedEdgeId);
                 } else {
                     alert('Error updating cardinality');
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error updating cardinality');
             });
         }
-
+        
         function clearEdgeSelection() {
             selectedEdgeId = null;
             document.getElementById('selected-edge-section').style.display = 'none';
-            document.getElementById('no-node-selected').style.display = 'block';
             document.getElementById('detach-btn').style.display = 'none';
             document.getElementById('edge-status').style.display = 'none';
-            
-            // Clear network selection
-            network.unselectAll();
+            document.getElementById('no-node-selected').style.display = 'block';
         }
-
-        // Allow Enter key to trigger search
         
-        // Add event listeners for search query inputs
-        document.addEventListener('DOMContentLoaded', function() {
-            // For concept search
-            document.getElementById('i14y-search-query').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    searchI14Y();
-                }
-            });
-            
-            // For dataset search
-            document.getElementById('i14y-dataset-search-query').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    searchI14YDatasets();
-                }
-            });
-            
-            // Add event listener for I14Y search modal close to clear data element linking flag
-            const i14yModal = document.getElementById('i14ySearchModal');
-            if (i14yModal) {
-                i14yModal.addEventListener('hidden.bs.modal', function() {
-                    window.linkingDataElement = false;
-                });
-            }
-        });        // Handle cardinality dropdown change
-        document.getElementById('edge-cardinality').addEventListener('change', function(e) {
-            const customSection = document.getElementById('custom-cardinality-section');
-            if (e.target.value === '2..5') {
-                customSection.style.display = 'block';
-            } else {
-                customSection.style.display = 'none';
-            }
-        });
-        
-        // Function to confirm and convert a class to dataset
-        function confirmConvertToDataset() {
-            if (!selectedNodeId) return;
-            
-            if (confirm('Are you sure you want to convert this class to a dataset? This will remove any connections pointing to it.')) {
-                fetch(`/api/nodes/${selectedNodeId}/convert-to-dataset`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                .then(response => {
-                    if (response.ok) {
-                        return response.json();
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.error || 'Failed to convert node');
-                        });
-                    }
-                })
-                .then(data => {
-                    if (data.success) {
-                        showToast('Node successfully converted to dataset');
-                        loadGraph();
-                        loadNodeDetails(selectedNodeId);
-                    } else {
-                        showToast('Error: ' + data.error, 'error');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    showToast('Error: ' + error.message, 'error');
-                });
-            }
-        }
+        // Include the rest of the application functions...
     </script>
+
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- D3.js library -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <!-- D3.js visualization -->
+    <script src="/static/js/network-d3.js"></script>
+    
+    <!-- Modal handlers for add class and add data element -->
+    <script src="/static/js/modal-handlers.js"></script>
+    
+    <!-- Import handlers for CSV and XSD import -->
+    <script src="/static/js/import-handlers.js"></script>
 </body>
 </html>

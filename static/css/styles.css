@@ -1,14 +1,37 @@
 #graph-container {
-    height: 70vh;
-    border: 0px solid #ddd;
-    border-radius: 5px;
+    width: 100%;
+    height: 95%;
+    overflow: hidden;
+    border: none;
+}
+.node.source-node circle {
+    stroke: #ff6600;
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 3px rgba(255, 102, 0, 0.5));
 }
 
+/* Zoom controls styling */
+.zoom-controls {
+    background-color: rgba(255, 255, 255, 0.7);
+    border-radius: 4px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+    padding: 5px;
+}
+
+.zoom-controls button {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #ccc;
+}
+
+.zoom-controls button:hover {
+    background-color: #f0f0f0;
+}
+
+/* Main content */
 .sidebar {
     background-color: #f8f9fa;
     min-height: 100vh;
     padding: 20px;
-    border-right: 1px solid #dee2e6;
 }
 
 .constraint-group {
@@ -42,6 +65,11 @@
     padding: 10px;
     border-radius: 5px;
     margin-bottom: 15px;
+    display: none; /* Hidden by default */
+}
+
+.connection-mode.active {
+    display: block; /* Show when connection mode is active */
 }
 
 .loading {
@@ -49,8 +77,51 @@
     pointer-events: none;
 }
 
+/* Link styles */
+.link {
+    stroke-opacity: 0.6;
+    transition: stroke-opacity 0.3s, stroke-width 0.3s;
+}
+
+.link:hover {
+    stroke-opacity: 1;
+    cursor: pointer;
+}
+
+.link.selected {
+    stroke-opacity: 1;
+    stroke-width: 3px !important;
+    stroke-dasharray: 5, 5;
+    stroke: #ff0000 !important;
+}
+
+/* Invisible hitbox for links - helps with clicking */
+.link-hitbox {
+    stroke-opacity: 0;
+    pointer-events: stroke;
+}
+
+/* Highlight nodes in connection mode */
+.node.source-node circle {
+    stroke: #ff6600;
+    stroke-width: 3px;
+    filter: drop-shadow(0 0 3px rgba(255, 102, 0, 0.5));
+}
+
 .main-content {
     padding: 20px;
+    height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+}
+
+.main-container {
+    min-height: calc(100vh - 80px);
+}
+
+.app-header {
+    /* Header should not have any height constraints */
+    position: static;
 }
 
 #no-node-selected {
@@ -102,14 +173,14 @@
 }
 
 .btn-dataset {
-    background-color: #ff9999; /* Light red for dataset */
-    border-color: #ff9999;
+    background-color: #87CEFA; /* Light blue for dataset */
+    border-color: #87CEFA;
     color: #000;
 }
 
 .btn-dataset:hover {
-    background-color: #ee8888;
-    border-color: #ee8888;
+    background-color: #87CEFA;
+    border-color: #87CEFA;
 }
 
 .btn-new-structure {
@@ -121,4 +192,20 @@
 .btn-new-structure:hover {
     background-color: #e2e6ea;
     border-color: #dae0e5;
+}
+
+/* I14Y Link Icon Styling */
+.i14y-link-icon {
+    cursor: help;
+}
+
+.i14y-link-icon:hover circle {
+    fill: #218838;
+    transform: scale(1.1);
+    transition: all 0.2s ease;
+}
+
+.i14y-link-icon:hover path {
+    stroke: #f8f9fa;
+    transition: all 0.2s ease;
 }

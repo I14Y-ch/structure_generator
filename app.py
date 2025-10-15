@@ -16,9 +16,15 @@ from pathlib import Path
 from rdflib import Graph, Literal, Namespace, URIRef, BNode
 from rdflib.namespace import RDF, XSD, SH, OWL, RDFS, DCTERMS
 
-# Import CSV converter 
-from csv_converter import csv_to_ttl
-from xsd_importer import xsd_to_ttl
+# Import CSV converter and XSD importer using relative imports if possible
+try:
+    from .csv_converter import csv_to_ttl
+except ImportError:
+    from csv_converter import csv_to_ttl
+try:
+    from .xsd_importer import xsd_to_ttl
+except ImportError:
+    from xsd_importer import xsd_to_ttl
 
 class SessionManager:
     """Manages user sessions and automatic cleanup"""
@@ -79,23 +85,6 @@ class SessionManager:
                 self.sessions[session_id] = None  # Will be set when class is available
             
             return self.sessions[session_id]
-    
-    def get_session_stats(self):
-        """Get statistics about active sessions"""
-        with self.lock:
-            return {
-                'active_sessions': len(self.sessions),
-                'session_details': [
-                    {
-                        'session_id': sid[:8] + '...',  # Partial ID for privacy
-                        'last_activity': timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                        'nodes_count': len(editor.nodes) if hasattr(editor, 'nodes') else 0
-                    }
-                    for sid, (editor, timestamp) in 
-                    zip(self.sessions.keys(), 
-                        zip(self.sessions.values(), self.session_timestamps.values()))
-                ]
-            }
 
 class I14YAPIClient:
     """Client for interacting with I14Y API"""
@@ -278,11 +267,6 @@ class I14YAPIClient:
             print(f"Error getting codelist entries: {e}")
             return None
     
-    def test_codelist_api(self, concept_id: str = "08d93fc7-6bb5-5585-a5a3-32a1d8ea7496"):
-        """Test function to debug codelist API response"""
-        url = f"https://api.i14y.admin.ch/api/public/v1/concepts/{concept_id}/codelist-entries/exports/json"
-        print(f"Testing codelist API: {url}")
-        
     def search_datasets(self, query='', page=1, page_size=20):
         """Search for datasets using the I14Y API
         
@@ -608,9 +592,11 @@ class SHACLNode:
         self.conforms_to_concept_uri = None  # dcterms:conformsTo link to underlying concept
         self.is_linked_to_concept = False  # Whether this data element is linked to an I14Y concept
         
+        # Visualization properties
+        self.position = {'x': 0.5, 'y': 0.5}  # Default position in graph layout
+        
         # Graph structure
         self.connections = set()
-        self.property_order = None  # For ordering in TTL export
         self.datatype = "xsd:string"  # Default datatype for concepts
 
         # Advanced SHACL constraints
@@ -894,7 +880,6 @@ class SHACLNode:
             'conforms_to_concept_uri': self.conforms_to_concept_uri,
             'is_linked_to_concept': self.is_linked_to_concept,
             'connections': connections_list,
-            'property_order': self.property_order,
             'datatype': self.datatype,
             # Advanced SHACL constraints
             'min_count': self.min_count,
@@ -905,7 +890,9 @@ class SHACLNode:
             'in_values': self.in_values,
             'node_reference': self.node_reference,
             'xone_groups': self.xone_groups,
-            'range': self.range
+            'range': self.range,
+            # Visualization properties
+            'position': self.position
         }
     
     @classmethod
@@ -919,7 +906,6 @@ class SHACLNode:
         node.conforms_to_concept_uri = data.get('conforms_to_concept_uri')
         node.is_linked_to_concept = data.get('is_linked_to_concept', False)
         node.connections = set(data.get('connections', []))
-        node.property_order = data.get('property_order')
         node.datatype = data.get('datatype', 'xsd:string')
         # Advanced SHACL constraints
         node.min_count = data.get('min_count')
@@ -931,6 +917,8 @@ class SHACLNode:
         node.node_reference = data.get('node_reference')
         node.xone_groups = data.get('xone_groups', [])
         node.range = data.get('range')
+        # Visualization properties
+        node.position = data.get('position', {'x': 0.5, 'y': 0.5})
         return node
 
 def parse_cardinality(cardinality_str: str) -> Tuple[Optional[int], Optional[int]]:
@@ -1375,7 +1363,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         class_properties[class_node.id] = class_uri
 
     # Add property references for concepts directly connected to dataset
-    property_order = 0
     for concept in connected_concepts:
         concept_id = norm_id(concept.title)
         # Use the full I14Y URI pattern with dataset_id path
@@ -1395,7 +1382,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((property_uri, SH.datatype, URIRef(concept.datatype)))
         else:
             g.add((property_uri, SH.datatype, XSD.string))  # Default to string
-        g.add((property_uri, SH.order, Literal(property_order)))
 
         # Add I14Y concept reference if available
         safe_add_conforms_to(property_uri, concept)
@@ -1464,9 +1450,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
-        property_order += 1
-
-    # Add property references for data elements directly connected to dataset
     for data_element in connected_data_elements:
         element_id = norm_id(data_element.local_name or data_element.title)
         # Use the full I14Y URI pattern with dataset_id path
@@ -1486,7 +1469,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((property_uri, SH.datatype, URIRef(data_element.datatype)))
         else:
             g.add((property_uri, SH.datatype, XSD.string))  # Default to string
-        g.add((property_uri, SH.order, Literal(property_order)))
 
         # Add I14Y concept reference if the data element is linked to a concept
         safe_add_conforms_to(property_uri, data_element)
@@ -1572,9 +1554,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
-        property_order += 1
-
-    # Create PropertyShapes for classes and add them to the dataset
     for class_node in connected_classes:
         class_id = norm_id(class_node.title)
         class_uri = class_properties[class_node.id]
@@ -1585,7 +1564,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((property_uri, RDF.type, SH.PropertyShape))
         g.add((property_uri, RDF.type, OWL.ObjectProperty))
         g.add((property_uri, SH.path, property_uri))
-        g.add((property_uri, SH.order, Literal(property_order)))
 
         # Add advanced SHACL constraints for classes
         if class_node.min_count is not None:
@@ -1618,7 +1596,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
-        property_order += 1
 
     # Serialize to TTL format with custom prefixes
     ttl_content = g.serialize(format='turtle', encoding='utf-8').decode('utf-8')
@@ -1746,7 +1723,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         for node_id in G.nodes():
             node = self.nodes[node_id]
             if node.type == 'dataset':
-                color = '#ff9999'  # Light red
+                color = '#87CEFA'  # Light blue
             elif node.type == 'concept':
                 color = '#99ccff'  # Light blue
             elif node.type == 'class':
@@ -2127,7 +2104,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                     connected_classes.append(connected_node)
 
         # Add property references and create property shapes
-        property_order = 0
         rdf_list_counter = 0  # For generating unique RDF list IDs
 
         for concept in connected_concepts:
@@ -2140,7 +2116,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             g.add((property_uri, RDF.type, QB.AttributeProperty))
             g.add((property_uri, SH.path, property_uri))
             g.add((property_uri, SH.datatype, URIRef(concept.datatype)))
-            g.add((property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
 
             # Add I14Y concept reference if available
             safe_add_conforms_to(property_uri, concept)
@@ -2210,7 +2185,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
             # Add to dataset properties
             g.add((dataset_shape, SH.property, property_uri))
-            property_order += 1
 
         # Generate property shapes for classes
         for class_node in connected_classes:
@@ -2223,7 +2197,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             g.add((property_uri, RDF.type, SH.PropertyShape))
             g.add((property_uri, RDF.type, OWL.ObjectProperty))
             g.add((property_uri, SH.path, property_uri))
-            g.add((property_uri, SH.order, Literal(property_order)))
 
             # Add advanced SHACL constraints for classes
             if class_node.min_count is not None:
@@ -2295,7 +2268,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((concept_property_uri, RDF.type, QB.AttributeProperty))
                 g.add((concept_property_uri, SH.path, concept_property_uri))
                 g.add((concept_property_uri, SH.datatype, URIRef(concept.datatype)))
-                g.add((concept_property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
 
                 # Add I14Y concept reference if available
                 safe_add_conforms_to(concept_property_uri, concept)
@@ -2364,7 +2336,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
                 # Add to class properties
                 g.add((class_uri, SH.property, concept_property_uri))
-                property_order += 1
 
             # Add property shapes for classes connected to this class (class-to-class relationships)
             for connected_class in connected_class_classes:
@@ -2376,7 +2347,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 g.add((class_ref_property_uri, RDF.type, SH.PropertyShape))
                 g.add((class_ref_property_uri, RDF.type, OWL.ObjectProperty))
                 g.add((class_ref_property_uri, SH.path, class_ref_property_uri))
-                g.add((class_ref_property_uri, SH.order, Literal(property_order, datatype=XSD.integer)))
 
                 # Use sh:node instead of sh:class for I14Y (as recommended in documentation section 6)
                 g.add((class_ref_property_uri, SH.node, connected_class_uri))
@@ -2413,11 +2383,9 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
                 # Add to class properties
                 g.add((class_uri, SH.property, class_ref_property_uri))
-                property_order += 1
 
             # Add to dataset properties
             g.add((dataset_shape, SH.property, property_uri))
-            property_order += 1
 
         # Add sh:xone constraints for exclusive property groups
         if hasattr(dataset_node, 'xone_groups') and dataset_node.xone_groups:
@@ -2729,6 +2697,30 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_TYPE'] = 'filesystem'
 
+# Add the /api/reset endpoint
+@app.route('/api/reset', methods=['POST'])
+def reset_structure_api():
+    """Reset the structure to a new empty one with just a dataset node"""
+    editor = get_user_editor()
+    try:
+        print("API: Resetting project structure (via /api/reset)")
+        result = editor.reset_structure()
+        if result:
+            node_count = len(editor.nodes)
+            edge_count = len(editor.edges)
+            print(f"Structure reset: {node_count} nodes, {edge_count} edges")
+            return jsonify({
+                "success": True,
+                "message": "Structure reset successfully",
+                "nodeCount": node_count,
+                "edgeCount": edge_count
+            })
+        else:
+            return jsonify({"error": "Failed to reset structure"}), 500
+    except Exception as e:
+        print(f"Error resetting structure: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 class FlaskSHACLGraphEditor:
     """
     SHACL Graph Editor for Flask
@@ -2776,13 +2768,6 @@ class FlaskSHACLGraphEditor:
             node.range = node_data['range'] if node_data['range'] else None
         if 'local_name' in node_data:
             node.local_name = node_data['local_name'] if node_data['local_name'] else None
-        if 'property_order' in node_data:
-            try:
-                # Convert to integer and store
-                node.property_order = int(node_data['property_order'])
-                print(f"Updated property_order for node {node_id} to {node.property_order}")
-            except (ValueError, TypeError):
-                print(f"Invalid property_order value: {node_data['property_order']}")
             
         return {"success": True, "node": node.to_dict()}
     
@@ -2806,17 +2791,34 @@ class FlaskSHACLGraphEditor:
             return self.nodes[node_id].to_dict()
         return None
     
+    def get_node_by_id(self, node_id):
+        """Get the actual node object by ID"""
+        return self.nodes.get(node_id)
+    
     def get_all_nodes(self):
         """Get all nodes"""
         return {node_id: node.to_dict() for node_id, node in self.nodes.items()}
     
     def connect_nodes(self, source_id, target_id):
         """Connect two nodes"""
-        if source_id not in self.nodes or target_id not in self.nodes:
+        # Verify both nodes exist
+        if source_id not in self.nodes:
+            print(f"ERROR: Source node {source_id} not found")
             return False
             
-        # Add to connections set
-        self.nodes[source_id].connections.add(target_id)
+        if target_id not in self.nodes:
+            print(f"ERROR: Target node {target_id} not found") 
+            return False
+            
+        # Get the actual node objects
+        source_node = self.nodes[source_id]
+        target_node = self.nodes[target_id]
+        
+        print(f"Connecting: {source_node.type}({source_node.title}) → {target_node.type}({target_node.title})")
+            
+        # Add to connections set - bidirectional connection
+        source_node.connections.add(target_id)
+        target_node.connections.add(source_id)  # Add reverse connection
         
         # Create an edge in the edge dictionary
         edge_id = f"{source_id}-{target_id}"
@@ -2827,22 +2829,56 @@ class FlaskSHACLGraphEditor:
             'cardinality': '1..1'
         }
         
-        print(f"Connected nodes: {source_id} -> {target_id}")
+        print(f"Successfully connected nodes: {source_id} -> {target_id}")
+        print(f"Node {source_id} now has {len(source_node.connections)} connections")
+        print(f"Node {target_id} now has {len(target_node.connections)} connections")
         return True
     
     def disconnect_nodes(self, source_id, target_id):
         """Disconnect two nodes"""
-        if source_id not in self.nodes or target_id not in self.nodes:
+        # Verify both nodes exist
+        if source_id not in self.nodes:
+            print(f"ERROR: Source node {source_id} not found")
             return False
             
-        # Remove from connections set
-        if target_id in self.nodes[source_id].connections:
-            self.nodes[source_id].connections.remove(target_id)
+        if target_id not in self.nodes:
+            print(f"ERROR: Target node {target_id} not found")
+            return False
+        
+        # Get the actual node objects
+        source_node = self.nodes[source_id]
+        target_node = self.nodes[target_id]
+        
+        print(f"Disconnecting: {source_node.type}({source_node.title}) ← → {target_node.type}({target_node.title})")
+        
+        # Remove from connections set - both directions
+        if target_id in source_node.connections:
+            source_node.connections.remove(target_id)
+            print(f"Removed {target_id} from {source_id}'s connections")
+        else:
+            print(f"Warning: {target_id} not found in {source_id}'s connections")
+        
+        if source_id in target_node.connections:
+            target_node.connections.remove(source_id)
+            print(f"Removed {source_id} from {target_id}'s connections")
+        else:
+            print(f"Warning: {source_id} not found in {target_id}'s connections")
         
         # Remove edge from edge dictionary
         edge_id = f"{source_id}-{target_id}"
         if edge_id in self.edges:
             del self.edges[edge_id]
+            print(f"Removed edge {edge_id}")
+        
+        # Also check for reverse edge
+        reverse_edge_id = f"{target_id}-{source_id}"
+        if reverse_edge_id in self.edges:
+            del self.edges[reverse_edge_id]
+            print(f"Removed reverse edge {reverse_edge_id}")
+            
+        print(f"Node {source_id} now has {len(source_node.connections)} connections")
+        print(f"Node {target_id} now has {len(target_node.connections)} connections")
+        return True
             
         print(f"Disconnected nodes: {source_id} -> {target_id}")
         return True
@@ -2908,6 +2944,21 @@ class FlaskSHACLGraphEditor:
     def delete_edge(self, edge_id):
         """Delete an edge"""
         if edge_id in self.edges:
+            # Get source and target ids
+            edge = self.edges[edge_id]
+            source_id = edge.get('from')
+            target_id = edge.get('to')
+            
+            # Remove connections between nodes if they exist
+            if source_id and target_id:
+                if source_id in self.nodes and target_id in self.nodes:
+                    # Remove bidirectional connections
+                    if target_id in self.nodes[source_id].connections:
+                        self.nodes[source_id].connections.remove(target_id)
+                    if source_id in self.nodes[target_id].connections:
+                        self.nodes[target_id].connections.remove(source_id)
+            
+            # Delete the edge
             del self.edges[edge_id]
             return True
         return False
@@ -3006,6 +3057,194 @@ def get_graph():
     # Print debug info
     print(f"Fetching graph with {len(editor.nodes)} nodes and {len(editor.edges)} edges")
     
+    # Process all nodes
+    for node_id, node in editor.nodes.items():
+        # Determine node type
+        node_type = node.type
+        
+        # Add node to nodes data
+        nodes_data.append({
+            'id': node_id,
+            'title': node.title,
+            'description': node.description,
+            'type': node_type,
+            'i14y_id': node.i14y_id if hasattr(node, 'i14y_id') else None
+        })
+    
+    # Process all edges
+    for edge_id, edge in editor.edges.items():
+        # Check the type of edge object
+        if hasattr(edge, 'from_node') and hasattr(edge, 'to_node'):
+            # Edge is an object with from_node and to_node attributes
+            edges_data.append({
+                'id': edge_id,
+                'from': edge.from_node.id,
+                'to': edge.to_node.id,
+                'cardinality': edge.cardinality if hasattr(edge, 'cardinality') else '1..1'
+            })
+        elif isinstance(edge, dict) and 'from' in edge and 'to' in edge:
+            # Edge is already a dict with 'from' and 'to' keys
+            edges_data.append({
+                'id': edge_id,
+                'from': edge['from'],
+                'to': edge['to'],
+                'cardinality': edge.get('cardinality', '1..1')
+            })
+        else:
+            # Try to extract from and to IDs based on common patterns
+            try:
+                from_id = edge.from_id if hasattr(edge, 'from_id') else (
+                    edge['from_id'] if isinstance(edge, dict) and 'from_id' in edge else None
+                )
+                to_id = edge.to_id if hasattr(edge, 'to_id') else (
+                    edge['to_id'] if isinstance(edge, dict) and 'to_id' in edge else None
+                )
+                
+                if from_id and to_id:
+                    edges_data.append({
+                        'id': edge_id,
+                        'from': from_id,
+                        'to': to_id,
+                        'cardinality': edge.cardinality if hasattr(edge, 'cardinality') else (
+                            edge.get('cardinality', '1..1') if isinstance(edge, dict) else '1..1'
+                        )
+                    })
+                else:
+                    print(f"Warning: Could not extract from/to IDs for edge {edge_id}")
+            except Exception as e:
+                print(f"Error processing edge {edge_id}: {str(e)}")
+                continue
+    
+    return jsonify({
+        'nodes': nodes_data,
+        'edges': edges_data
+    })
+@app.route('/api/nodes/<node_id>/position', methods=['POST'])
+def update_node_position(node_id):
+    """Update a node's position in the layout"""
+    editor = get_user_editor()
+    data = request.json
+    
+    if not data or 'x' not in data or 'y' not in data:
+        return jsonify({"error": "Missing position data"}), 400
+    
+    if node_id not in editor.nodes:
+        return jsonify({"error": "Node not found"}), 404
+    
+    # Store position in the node's data
+    editor.nodes[node_id].position['x'] = data['x']
+    editor.nodes[node_id].position['y'] = data['y']
+    
+    return jsonify({"success": True})
+
+@app.route('/api/graph/layout', methods=['GET'])
+def get_graph_layout():
+    """Get the NetworkX computed layout for the graph"""
+    editor = get_user_editor()
+    
+    try:
+        import networkx as nx
+        import numpy as np
+        
+        # Create NetworkX graph
+        G = nx.Graph()
+        
+        # Add nodes
+        for node_id in editor.nodes:
+            G.add_node(node_id)
+        
+        # Add edges
+        for edge_id, edge in editor.edges.items():
+            # Check the type of edge object
+            if hasattr(edge, 'from_node') and hasattr(edge, 'to_node'):
+                # Edge is an object with from_node and to_node attributes
+                G.add_edge(edge.from_node.id, edge.to_node.id)
+            elif isinstance(edge, dict) and 'from' in edge and 'to' in edge:
+                # Edge is already a dict with 'from' and 'to' keys
+                G.add_edge(edge['from'], edge['to'])
+            else:
+                # Try to extract from and to IDs based on common patterns
+                try:
+                    from_id = edge.from_id if hasattr(edge, 'from_id') else (
+                        edge['from_id'] if isinstance(edge, dict) and 'from_id' in edge else None
+                    )
+                    to_id = edge.to_id if hasattr(edge, 'to_id') else (
+                        edge['to_id'] if isinstance(edge, dict) and 'to_id' in edge else None
+                    )
+                    
+                    if from_id and to_id:
+                        G.add_edge(from_id, to_id)
+                    else:
+                        print(f"Warning: Could not extract from/to IDs for edge {edge_id} in layout calculation")
+                except Exception as e:
+                    print(f"Error processing edge {edge_id} in layout calculation: {str(e)}")
+                    continue
+        
+        # Apply NetworkX layout algorithm
+        if len(G.nodes) > 0:
+            # Check for saved positions first
+            saved_pos = {}
+            fixed_nodes = []
+            
+            for node_id in G.nodes():
+                if node_id in editor.nodes and hasattr(editor.nodes[node_id], 'position') and editor.nodes[node_id].position and 'x' in editor.nodes[node_id].position and 'y' in editor.nodes[node_id].position:
+                    # Use saved position
+                    saved_pos[node_id] = (editor.nodes[node_id].position['x'], editor.nodes[node_id].position['y'])
+                    fixed_nodes.append(node_id)
+            
+            # Use different layouts based on graph size, respecting fixed positions
+            if len(G.nodes) < 10:
+                pos = nx.spring_layout(G, k=0.3, iterations=50, pos=saved_pos, fixed=fixed_nodes)
+            elif len(G.nodes) < 30:
+                pos = nx.fruchterman_reingold_layout(G, pos=saved_pos, fixed=fixed_nodes)
+            else:
+                # For kamada_kawai, we need to handle fixed nodes differently since it doesn't support the fixed parameter
+                if fixed_nodes:
+                    # Initialize with positions for all nodes
+                    init_pos = saved_pos.copy()
+                    for node_id in G.nodes():
+                        if node_id not in init_pos:
+                            init_pos[node_id] = (np.random.random(), np.random.random())
+                    pos = nx.kamada_kawai_layout(G, pos=init_pos)
+                    # Restore fixed positions
+                    for node_id in fixed_nodes:
+                        pos[node_id] = saved_pos[node_id]
+                else:
+                    pos = nx.kamada_kawai_layout(G)
+            
+            # Normalize positions to 0-1 range
+            min_x = min(p[0] for p in pos.values())
+            max_x = max(p[0] for p in pos.values())
+            min_y = min(p[1] for p in pos.values())
+            max_y = max(p[1] for p in pos.values())
+            
+            width_range = max_x - min_x if max_x > min_x else 1
+            height_range = max_y - min_y if max_y > min_y else 1
+            
+            normalized_pos = {}
+            for node_id, p in pos.items():
+                normalized_pos[node_id] = {
+                    'x': (p[0] - min_x) / width_range * 0.8 + 0.1,  # Add 10% margin
+                    'y': (p[1] - min_y) / height_range * 0.8 + 0.1   # Add 10% margin
+                }
+            
+            return jsonify({
+                'success': True,
+                'positions': normalized_pos
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'positions': {}
+            })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+    
     # For edge debugging
     connection_counts = {}
     for node_id, node in editor.nodes.items():
@@ -3020,7 +3259,7 @@ def get_graph():
         # Determine node color based on type
         color = '#99ccff'  # Default blue for concepts
         if node.type == 'dataset':
-            color = '#ff9999'  # Light red for dataset
+            color = '#87CEFA'  # Light blue for dataset
         elif node.type == 'class':
             color = '#99ff99'  # Light green for classes
         elif node.type == 'data_element':
@@ -3086,7 +3325,6 @@ def get_graph():
             'publisher': publisher,  # Include publisher for tooltip
             'color': color,
             'type': node.type,
-            'property_order': node.property_order,  # Add ordering value for node positioning
             'selected': False  # By default, no node is selected
         })
     
@@ -3234,6 +3472,66 @@ def update_data_element(data_element_id):
     if result:
         return jsonify(result)
     return jsonify({"error": "Failed to update data element"}), 500
+
+@app.route('/api/link/i14y', methods=['POST'])
+def link_node_to_i14y_concept():
+    """Link a node to an I14Y concept"""
+    editor = get_user_editor()
+    data = request.json
+    
+    # Ensure node_id is a string
+    node_id = data.get('node_id')
+    if not node_id:
+        return jsonify({"error": "Node ID is required"}), 400
+        
+    # Handle the case where node_id is a dict (from D3.js visualization data)
+    if isinstance(node_id, dict) and 'id' in node_id:
+        print(f"Received node_id as dict: {node_id}")
+        node_id = node_id['id']
+    # Convert node_id to string if it's not already
+    elif not isinstance(node_id, str):
+        print(f"Warning: node_id is not a string, it's a {type(node_id)}. Value: {node_id}")
+        try:
+            node_id = str(node_id)
+        except Exception as e:
+            print(f"Error converting node_id to string: {e}")
+            return jsonify({"error": f"Invalid node ID format: {type(node_id)}"}), 400
+    
+    # Check if the node exists
+    if node_id not in editor.nodes:
+        return jsonify({"error": f"Node with ID {node_id} not found"}), 404
+        
+    node = editor.nodes[node_id]
+    if node.type != 'data_element':
+        return jsonify({"error": "Only data elements can be linked to I14Y concepts"}), 400
+        
+    concept_uri = data.get('concept_uri')
+    concept_data = data.get('concept_data')
+    
+    if not concept_uri or not concept_data:
+        return jsonify({"error": "Concept URI and data are required"}), 400
+        
+    try:
+        # Save original values
+        original_title = node.title
+        original_description = node.description
+        
+        # Link to concept
+        node.conforms_to_concept_uri = concept_uri
+        node.is_linked_to_concept = True
+        node.i14y_data = concept_data
+        
+        # Update title and description if available from concept
+        if concept_data.get('title'):
+            node.title = concept_data['title']
+            
+        if concept_data.get('description'):
+            node.description = concept_data['description']
+            
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error linking to I14Y concept: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/data-elements/<data_element_id>/link-concept', methods=['POST'])
 def link_data_element_to_concept(data_element_id):
@@ -3653,8 +3951,60 @@ def get_edge(edge_id):
     editor = get_user_editor()
     edge = editor.get_edge(edge_id)
     if edge:
+        # Add source and target node details to the response
+        if 'from' in edge and 'to' in edge:
+            from_node = editor.nodes.get(edge['from'])
+            to_node = editor.nodes.get(edge['to'])
+            if from_node and to_node:
+                edge_with_nodes = edge.copy()
+                edge_with_nodes['from_node'] = from_node.to_dict()
+                edge_with_nodes['to_node'] = to_node.to_dict()
+                return jsonify(edge_with_nodes)
         return jsonify(edge)
     return jsonify({"error": "Edge not found"}), 404
+
+@app.route('/api/edges/<edge_id>', methods=['DELETE'])
+def delete_edge(edge_id):
+    """Delete an edge by ID"""
+    editor = get_user_editor()
+    
+    # Ensure the edge exists
+    if edge_id not in editor.edges:
+        print(f"Edge not found: {edge_id}")
+        return jsonify({"error": "Edge not found"}), 404
+    
+    # Get the nodes connected by this edge before deletion
+    edge = editor.edges.get(edge_id)
+    if edge and 'from' in edge and 'to' in edge:
+        from_id = edge['from']
+        to_id = edge['to']
+        
+        print(f"Deleting edge {edge_id} connecting {from_id} to {to_id}")
+        
+        # Remove the connection from both nodes' connection sets
+        if from_id in editor.nodes and to_id in editor.nodes:
+            if to_id in editor.nodes[from_id].connections:
+                editor.nodes[from_id].connections.remove(to_id)
+                print(f"Removed {to_id} from {from_id}'s connections")
+            else:
+                print(f"Warning: {to_id} not found in {from_id}'s connections")
+                
+            if from_id in editor.nodes[to_id].connections:
+                editor.nodes[to_id].connections.remove(from_id)
+                print(f"Removed {from_id} from {to_id}'s connections")
+            else:
+                print(f"Warning: {from_id} not found in {to_id}'s connections")
+    else:
+        print(f"Warning: Edge {edge_id} doesn't have valid from/to fields")
+    
+    # Delete the edge
+    try:
+        del editor.edges[edge_id]
+        print(f"Successfully deleted edge {edge_id}")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"Error deleting edge: {str(e)}")
+        return jsonify({"error": f"Failed to delete edge: {str(e)}"}), 500
 
 @app.route('/api/edges/<edge_id>/cardinality', methods=['POST'])
 def update_edge_cardinality(edge_id):
@@ -3670,54 +4020,6 @@ def update_edge_cardinality(edge_id):
     if success:
         return jsonify({"success": True})
     return jsonify({"error": "Edge not found"}), 404
-
-@app.route('/api/edges/<edge_id>/order', methods=['POST'])
-def update_edge_order(edge_id):
-    """Update the order of an edge (for ordering data elements)"""
-    editor = get_user_editor()
-    data = request.json
-    order = data.get('order')
-    
-    if order is None:
-        return jsonify({"error": "Order is required"}), 400
-    
-    if edge_id not in editor.edges:
-        return jsonify({"error": "Edge not found"}), 404
-    
-    editor.edges[edge_id]['order'] = int(order)
-    
-    return jsonify({"success": True})
-
-@app.route('/api/nodes/<node_id>/reorder-elements', methods=['POST'])
-def reorder_node_elements(node_id):
-    """Reorder data elements connected to a node (dataset or class)"""
-    editor = get_user_editor()
-    data = request.json
-    element_order = data.get('elementOrder')
-    
-    if not element_order:
-        return jsonify({"error": "Element order is required"}), 400
-    
-    if node_id not in editor.nodes:
-        return jsonify({"error": "Node not found"}), 404
-    
-    # Get all edges from this node to data elements
-    node_edges = {}
-    for edge_id, edge in editor.edges.items():
-        if edge['from'] == node_id:
-            to_node = editor.nodes.get(edge['to'])
-            if to_node and (to_node.type == 'data_element' or to_node.type == 'concept'):
-                node_edges[edge['to']] = edge_id
-    
-    # Update the order for each edge
-    updated_edges = []
-    for index, element_id in enumerate(element_order):
-        if element_id in node_edges:
-            edge_id = node_edges[element_id]
-            editor.edges[edge_id]['order'] = index
-            updated_edges.append(edge_id)
-    
-    return jsonify({"success": True, "updatedEdges": updated_edges})
 
 @app.route('/api/connect', methods=['POST'])
 def connect_nodes():
@@ -3809,7 +4111,7 @@ def load_graph():
         return jsonify({"success": True})
     return jsonify({"error": "Failed to load graph"}), 500
 
-@app.route('/api/project/save', methods=['POST'])
+@app.route('/api/project/save', methods=['GET'])
 def save_project():
     """Save the current project to a file for download"""
     editor = get_user_editor()
@@ -3855,8 +4157,22 @@ def load_project():
         return jsonify({"error": "Only JSON files are supported"}), 400
     
     try:
+        # Debug logging
+        print(f"File upload debug: filename={file.filename}, content_type={file.content_type}")
+        print(f"File object: {file}")
+        
         # Read file content
-        content = file.read().decode('utf-8')
+        raw_content = file.read()
+        print(f"Raw content length: {len(raw_content)} bytes")
+        
+        if len(raw_content) == 0:
+            print("ERROR: File content is empty!")
+            return jsonify({"error": "Uploaded file is empty"}), 400
+        
+        content = raw_content.decode('utf-8')
+        print(f"Decoded content length: {len(content)} characters")
+        print(f"Content preview: {content[:200]}...")
+        
         project_data = json.loads(content)
         
         print(f"Loading project - data keys: {project_data.keys()}")
@@ -3865,21 +4181,82 @@ def load_project():
         editor.nodes.clear()
         editor.edges.clear()
         
-        # Load nodes
-        node_count = len(project_data.get("nodes", {}))
-        print(f"Loading {node_count} nodes from project")
-        for node_id, node_data in project_data.get("nodes", {}).items():
-            editor.nodes[node_id] = SHACLNode.from_dict(node_data)
-        
-        # Load edges if available in the project data
-        edge_count = 0
-        if "edges" in project_data:
-            edges_data = project_data.get("edges", {})
-            edge_count = len(edges_data)
-            print(f"Loading {edge_count} edges from project data")
-            editor.edges = edges_data
+        # Check if this is the legacy format (with "concepts" instead of "nodes")
+        if "concepts" in project_data and "nodes" not in project_data:
+            print("Detected legacy project format - converting concepts to nodes")
+            # Convert legacy format to current format
+            nodes_data = {}
+            for concept_id, concept_data in project_data.get("concepts", {}).items():
+                # Convert concept to node format
+                node_data = {
+                    'id': concept_id,
+                    'type': 'concept',  # Legacy format used concepts
+                    'title': concept_data.get('title', ''),
+                    'description': concept_data.get('description', ''),
+                    'datatype': concept_data.get('datatype', 'xsd:string'),
+                    'min_count': concept_data.get('min_count'),
+                    'max_count': concept_data.get('max_count'),
+                    'min_length': concept_data.get('min_length'),
+                    'max_length': concept_data.get('max_length'),
+                    'pattern': concept_data.get('pattern')
+                }
+                nodes_data[concept_id] = node_data
+            
+            # Create a dataset node if it doesn't exist
+            dataset_node_id = None
+            for node_id, node_data in nodes_data.items():
+                if node_data.get('type') == 'dataset':
+                    dataset_node_id = node_id
+                    break
+            
+            if not dataset_node_id:
+                dataset_node_id = str(uuid.uuid4())
+                nodes_data[dataset_node_id] = {
+                    'id': dataset_node_id,
+                    'type': 'dataset',
+                    'title': 'Imported Dataset',
+                    'description': 'Dataset imported from legacy format'
+                }
+            
+            # Set nodes from converted data
+            for node_id, node_data in nodes_data.items():
+                editor.nodes[node_id] = SHACLNode.from_dict(node_data)
+            
+            # Create edges from node connections
+            for node_id, node in editor.nodes.items():
+                if node_id != dataset_node_id and not node.connections:
+                    # Connect to dataset
+                    editor.nodes[dataset_node_id].connections.add(node_id)
+                    node.connections.add(dataset_node_id)
+                    edge_id = f"{dataset_node_id}-{node_id}"
+                    editor.edges[edge_id] = {
+                        'id': edge_id,
+                        'from': dataset_node_id,
+                        'to': node_id,
+                        'cardinality': '1..1'
+                    }
+            
+            node_count = len(editor.nodes)
+            edge_count = len(editor.edges)
+            print(f"Converted legacy format: {node_count} nodes and {edge_count} edges")
+            
         else:
-            print("No edges found in project data - will generate from node connections")
+            # Load current format
+            # Load nodes
+            node_count = len(project_data.get("nodes", {}))
+            print(f"Loading {node_count} nodes from project")
+            for node_id, node_data in project_data.get("nodes", {}).items():
+                editor.nodes[node_id] = SHACLNode.from_dict(node_data)
+            
+            # Load edges if available in the project data
+            edge_count = 0
+            if "edges" in project_data:
+                edges_data = project_data.get("edges", {})
+                edge_count = len(edges_data)
+                print(f"Loading {edge_count} edges from project data")
+                editor.edges = edges_data
+            else:
+                print("No edges found in project data - will generate from node connections")
         
         # Generate edges from node connections for backward compatibility
         conn_edges_added = 0
@@ -3895,10 +4272,14 @@ def load_project():
         if conn_edges_added > 0:
             print(f"Created {conn_edges_added} additional edges from node connections")
         
-        print(f"Project loaded: {node_count} nodes and {edge_count + conn_edges_added} total edges")
+        total_nodes = len(editor.nodes)
+        total_edges = len(editor.edges)
+        print(f"Project loaded: {total_nodes} nodes and {total_edges} total edges")
         return jsonify({"success": True})
     except Exception as e:
         print(f"Error loading project: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/files', methods=['GET'])
@@ -4066,16 +4447,11 @@ def link_i14y_dataset():
     print(f"Dataset data: {dataset_data.keys() if isinstance(dataset_data, dict) else 'not a dict'}")
     
     try:
-        # Find the dataset node
-        dataset_node = None
-        for node_id, node in editor.nodes.items():
-            if node.type == 'dataset':
-                dataset_node = node
-                break
-        
-        if not dataset_node:
-            print("ERROR: No dataset node found")
-            return jsonify({"error": "No dataset node found"}), 404
+        # Find the specific dataset node
+        dataset_node = editor.nodes.get(dataset_id)
+        if not dataset_node or dataset_node.type != 'dataset':
+            print("ERROR: Dataset node not found or not a dataset type")
+            return jsonify({"error": "Dataset node not found"}), 404
         
         # Update the dataset node with I14Y information
         if 'title' in dataset_data:
@@ -4103,10 +4479,10 @@ def link_i14y_dataset():
                 dataset_node.description = dataset_data.get('description', '')
         
         # Set the I14Y ID for the dataset
-        dataset_node.i14y_id = dataset_id
+        dataset_node.i14y_id = dataset_data.get('id')
         
         # Set the I14Y dataset URI
-        dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{dataset_id}/description"
+        dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{dataset_data.get('id')}/description"
         
         print(f"Successfully linked dataset: {dataset_node.title} (ID: {dataset_id})")
         
@@ -4594,16 +4970,6 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             max_length = None
             pattern = None
             datatype = None
-            property_order = 0  # Default ordering
-            
-            # Get ordering value (for left-to-right positioning)
-            order_values = list(g.objects(prop_shape, SH.order))
-            if order_values:
-                try:
-                    property_order = int(order_values[0])
-                    print(f"Found ordering {property_order} for property {title}")
-                except (ValueError, TypeError):
-                    pass
             
             # Get cardinality constraints
             min_counts = list(g.objects(prop_shape, SH.minCount))
@@ -4666,8 +5032,7 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 'max_length': max_length,
                 'pattern': pattern,
                 'datatype': datatype or 'xsd:string',
-                'in_values': in_values,
-                'property_order': property_order  # Add ordering from TTL
+                'in_values': in_values
             }
             
             # If this is an object property pointing to a class, handle it differently
@@ -4826,6 +5191,8 @@ def import_example_ttl():
 @app.route('/api/import/csv', methods=['POST'])
 def import_csv():
     """Import a CSV file and convert to SHACL TTL"""
+    with open('/tmp/csv_import.log', 'a') as f:
+        f.write("=== CSV IMPORT FUNCTION CALLED ===\n")
     editor = get_user_editor()
     try:
         if 'file' not in request.files:
@@ -4858,9 +5225,13 @@ def import_csv():
         
         # Process the TTL to extract data structure
         try:
+            with open('/tmp/csv_import.log', 'a') as f:
+                f.write("Starting TTL processing...\n")
             # Use RDFLib to parse the TTL
             g = Graph()
             g.parse(data=ttl, format='turtle')
+            with open('/tmp/csv_import.log', 'a') as f:
+                f.write("TTL parsed successfully\n")
             
             # Clear existing nodes except for the dataset node
             dataset_node = None
@@ -4892,11 +5263,17 @@ def import_csv():
             property_shapes = []
             for s, p, o in g.triples((None, RDF.type, SH.PropertyShape)):
                 property_shapes.append(s)
+                with open('/tmp/csv_import.log', 'a') as f:
+                    f.write(f"Found PropertyShape: {s}\n")
             
-            print(f"Found {len(property_shapes)} property shapes in TTL")
+            with open('/tmp/csv_import.log', 'a') as f:
+                f.write(f"Found {len(property_shapes)} property shapes in TTL\n")
             
             # Process each property shape
             for prop_idx, shape in enumerate(property_shapes):
+                with open('/tmp/csv_import.log', 'a') as f:
+                    f.write(f"Processing property shape {prop_idx + 1}/{len(property_shapes)}: {shape}\n")
+                
                 # Get property name (from sh:name or the URI)
                 prop_name = None
                 for _, _, name in g.triples((shape, SH.name, None)):
@@ -4907,59 +5284,82 @@ def import_csv():
                     # Extract from URI
                     prop_name = str(shape).split('/')[-1]
                 
+                with open('/tmp/csv_import.log', 'a') as f:
+                    f.write(f"Property name: {prop_name}\n")
+                
                 # Get datatype
                 datatype = None
                 for _, _, dt in g.triples((shape, SH.datatype, None)):
                     datatype = str(dt)
                     break
                 
-                # Create a concept node for this property
-                concept_node = SHACLNode('concept', title=prop_name)
-                concept_node.datatype = datatype or "xsd:string"
+                with open('/tmp/csv_import.log', 'a') as f:
+                    f.write(f"Property datatype: {datatype}\n")
+                
+                # Create a data element node for this property
+                data_element_node = SHACLNode('data_element', title=prop_name)
+                data_element_node.datatype = datatype or "xsd:string"
                 
                 # Add to nodes and connect to dataset
-                editor.nodes[concept_node.id] = concept_node
-                dataset_node.connections.add(concept_node.id)
-                concept_node.connections.add(dataset_node.id)
+                editor.nodes[data_element_node.id] = data_element_node
+                dataset_node.connections.add(data_element_node.id)
+                data_element_node.connections.add(dataset_node.id)
                 
-                print(f"Created concept node {concept_node.id} for property {prop_name}")
+                # Create edge between dataset and data element
+                edge_id = f"{dataset_node.id}_{data_element_node.id}"
+                editor.edges[edge_id] = {
+                    "id": edge_id,
+                    "from": dataset_node.id,
+                    "to": data_element_node.id,
+                    "cardinality": "0..1"  # Default cardinality
+                }
+                
+                with open('/tmp/csv_import.log', 'a') as f:
+                    f.write(f"Created data element node {data_element_node.id} for property {prop_name}\n")
+                    f.write(f"Current node count: {len(editor.nodes)}\n")
                 
                 # Extract constraints
                 # Min/Max Count
                 for _, _, value in g.triples((shape, SH.minCount, None)):
                     try:
-                        concept_node.min_count = int(value)
+                        data_element_node.min_count = int(value)
+                        print(f"Set min_count: {data_element_node.min_count}")
                     except (ValueError, TypeError):
                         pass
                 
                 for _, _, value in g.triples((shape, SH.maxCount, None)):
                     try:
-                        concept_node.max_count = int(value)
+                        data_element_node.max_count = int(value)
+                        print(f"Set max_count: {data_element_node.max_count}")
                     except (ValueError, TypeError):
                         pass
                 
                 # Min/Max Length
                 for _, _, value in g.triples((shape, SH.minLength, None)):
                     try:
-                        concept_node.min_length = int(value)
+                        data_element_node.min_length = int(value)
+                        print(f"Set min_length: {data_element_node.min_length}")
                     except (ValueError, TypeError):
                         pass
                 
                 for _, _, value in g.triples((shape, SH.maxLength, None)):
                     try:
-                        concept_node.max_length = int(value)
+                        data_element_node.max_length = int(value)
+                        print(f"Set max_length: {data_element_node.max_length}")
                     except (ValueError, TypeError):
                         pass
                 
                 # Pattern
                 for _, _, value in g.triples((shape, SH.pattern, None)):
-                    concept_node.pattern = str(value)
+                    data_element_node.pattern = str(value)
+                    print(f"Set pattern: {data_element_node.pattern}")
                 
-            print(f"Successfully processed TTL. Created {len(property_shapes)} concept nodes.")
+            print(f"Successfully processed TTL. Created {len(property_shapes)} data element nodes.")
         except Exception as e:
             import traceback
             print(f"Error processing TTL: {str(e)}")
-            print(traceback.format_exc())
+            print("Full traceback:")
+            traceback.print_exc()
             # Continue with basic import even if advanced processing fails
         
         return jsonify({"success": True})
@@ -5068,7 +5468,7 @@ def import_xsd():
                         break
                 
                 # Determine node type based on properties
-                # If it has a datatype, it's more like a concept
+                # If it has a datatype, it's more like a data element
                 # Otherwise, it's a class
                 has_datatype = False
                 for _, _, _ in g.triples((shape_uri, SH.datatype, None)):
@@ -5076,7 +5476,7 @@ def import_xsd():
                     break
                 
                 # Create appropriate node
-                node_type = 'concept' if has_datatype else 'class'
+                node_type = 'data_element' if has_datatype else 'class'
                 shacl_node = SHACLNode(node_type, title=node_name, description=description)
                 
                 # Add datatype if present
@@ -5085,8 +5485,8 @@ def import_xsd():
                         shacl_node.datatype = str(dt)
                         break
                 
-                # Add constraints for concepts
-                if node_type == 'concept':
+                # Add constraints for data elements
+                if node_type == 'data_element':
                     # Min/Max Length
                     for _, _, value in g.triples((shape_uri, SH.minLength, None)):
                         try:
@@ -5119,7 +5519,7 @@ def import_xsd():
                 dataset_node.connections.add(shacl_node.id)
                 shacl_node.connections.add(dataset_node.id)
                 
-                print(f"Created {node_type} node {shacl_node.id} for shape {node_name}")
+                print(f"Created {node_type} node {shacl_node.id} for shape {node_name} (has_datatype={has_datatype})")
             
             # Process property shapes to establish connections between nodes
             property_shapes = []
@@ -5164,31 +5564,6 @@ def import_xsd():
         print(f"Error importing XSD: {str(e)}")
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
-
-@app.route('/api/debug', methods=['GET'])
-def debug_api():
-    """Debug endpoint to check app state"""
-    editor = get_user_editor()
-    # Count nodes by type
-    node_counts = {
-        'total': len(editor.nodes),
-        'dataset': 0,
-        'class': 0,
-        'concept': 0
-    }
-    
-    for node in editor.nodes.values():
-        if node.type in node_counts:
-            node_counts[node.type] += 1
-    
-    # Return basic app state info
-    return jsonify({
-        'nodes': node_counts,
-        'nodes_list': [{'id': node_id, 'type': node.type, 'title': node.title} for node_id, node in editor.nodes.items()],
-        'api_client': {
-            'base_url': editor.i14y_client.base_url
-        }
-    })
 
 @app.route('/api/nodes/<node_id>/convert-to-dataset', methods=['POST'])
 def convert_to_dataset(node_id):
