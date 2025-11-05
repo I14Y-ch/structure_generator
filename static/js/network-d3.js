@@ -31,6 +31,18 @@ function initializeD3Visualization(containerId) {
     width = containerRect.width;
     height = containerRect.height;
     
+    console.log('Container dimensions:', width, 'x', height);
+    console.log('Container rect:', containerRect);
+    console.log('Container style:', window.getComputedStyle(container));
+    
+    // If dimensions are 0, try to set them explicitly
+    if (width === 0 || height === 0) {
+        console.warn('Container has zero dimensions, setting explicitly');
+        width = 800;
+        height = 600;
+        container.style.width = width + 'px';
+        container.style.height = height + 'px';
+    }
     // Define zoom behavior
     zoom = d3.zoom()
         .scaleExtent([0.1, 4])  // Allow zoom from 0.1x to 4x
@@ -62,7 +74,9 @@ function initializeD3Visualization(containerId) {
     // Add zoom controls to the interface
     addZoomControls(containerId);
     
-    console.log('D3 visualization initialized with width:', width, 'height:', height);
+    console.log('D3 visualization initialized successfully with width:', width, 'height:', height);
+    console.log('SVG element created:', svg);
+    console.log('G element created:', g);
 }
 
 // Add zoom controls to the interface
@@ -134,17 +148,42 @@ function addZoomControls(containerId) {
 function loadGraphWithD3() {
     console.log('Loading graph data for D3 visualization');
     
+    const debugEl = document.getElementById('debug-info');
+    if (debugEl) {
+        debugEl.innerHTML = '<div>Loading graph data...</div>';
+    }
+    
     fetch('/api/graph')
         .then(response => response.json())
         .then(data => {
             console.log('Received graph data:', data);
             
+            if (debugEl) {
+                debugEl.innerHTML = `<div>Received ${data.nodes.length} nodes and ${data.edges.length} edges</div>`;
+            }
+            
             if (!data.nodes || !Array.isArray(data.nodes)) {
                 console.error('Invalid graph data format:', data);
+                if (debugEl) {
+                    debugEl.innerHTML += '<div style="color: red;">Invalid graph data format</div>';
+                }
                 return;
             }
             
             console.log(`Processing ${data.nodes.length} nodes and ${data.edges.length} edges`);
+            
+            // Check if D3 visualization is initialized
+            if (!svg || !g) {
+                console.error('D3 visualization not initialized! svg:', svg, 'g:', g);
+                if (debugEl) {
+                    debugEl.innerHTML += '<div style="color: red;">D3 visualization not initialized</div>';
+                }
+                return;
+            }
+            
+            if (debugEl) {
+                debugEl.innerHTML += '<div>D3 visualization initialized, rendering...</div>';
+            }
             
             // Process the nodes
             nodes = data.nodes.map(node => {
@@ -166,12 +205,17 @@ function loadGraphWithD3() {
                         break;
                 }
                 
+                // Ensure nodes start within visible area
+                const margin = 50;
+                const x = margin + Math.random() * (width - 2 * margin);
+                const y = margin + Math.random() * (height - 2 * margin);
+                
                 return {
                     ...node,
                     color: color,
                     radius: node.type === 'dataset' || node.type === 'class' ? 30 : 20,
-                    x: Math.random() * width,
-                    y: Math.random() * height
+                    x: x,
+                    y: y
                 };
             });
             
@@ -191,15 +235,28 @@ function loadGraphWithD3() {
             
             // Render the visualization
             renderVisualization();
+            
+            if (debugEl) {
+                debugEl.innerHTML += '<div>Visualization rendered</div>';
+                setTimeout(() => {
+                    debugEl.innerHTML += `<div>Nodes in DOM: ${g.selectAll('.node').size()}</div>`;
+                    debugEl.innerHTML += `<div>Links in DOM: ${g.selectAll('.link').size()}</div>`;
+                }, 1000);
+            }
         })
         .catch(error => {
             console.error('Error loading graph data:', error);
+            if (debugEl) {
+                debugEl.innerHTML += `<div style="color: red;">Error: ${error.message}</div>`;
+            }
         });
 }
 
 // Render the visualization
 function renderVisualization() {
     console.log('Rendering visualization');
+    console.log('Nodes to render:', nodes.length);
+    console.log('Links to render:', links.length);
     
     // Clear the SVG
     g.selectAll('*').remove();
@@ -264,28 +321,6 @@ function renderVisualization() {
         .attr('stroke', '#222')
         .attr('stroke-width', 2);
 
-    // Add I14Y link icon for data elements linked to concepts
-    const linkIconGroup = node.filter(d => d.type === 'data_element' && d.is_linked_to_concept)
-        .append('g')
-        .attr('class', 'i14y-link-icon')
-        .attr('transform', d => `translate(${getNodeWidth(d) / 2 - 8}, ${-getNodeHeight(d) / 2 + 8})`);
-
-    linkIconGroup.append('circle')
-        .attr('r', 6)
-        .attr('fill', '#28a745')
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 1);
-
-    linkIconGroup.append('path')
-        .attr('d', 'M-2,-1 L-2,1 M0,-1 L0,1 M-1,-2 L1,-2 M-1,2 L1,2')  // Simple chain link pattern
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 1.5)
-        .attr('fill', 'none');
-
-    // Add tooltip title to the icon group
-    linkIconGroup.append('title')
-        .text('Linked to I14Y Concept');
-
     // Add text labels to nodes (centered)
     node.append('text')
         .attr('text-anchor', 'middle')
@@ -311,7 +346,7 @@ function getNodeColor(d) {
     // Data element
     if (d.type === 'data_element') {
         if (d.is_linked_to_concept === true) {
-            return '#99ccff'; // btn-concept (connected to I14Y)
+            return '#f9cee7'; // I14Y linked - pink
         } else {
             return '#ffcc99'; // btn-data-element (unconnected)
         }
@@ -370,7 +405,19 @@ function getNodeHeight(d) {
         .on('drag', dragMove)
         .on('end', dragEnd));
     
-    console.log('Visualization rendered');
+    console.log('Visualization rendered successfully');
+    console.log('Simulation created:', simulation);
+    console.log('Nodes in DOM:', g.selectAll('.node').size());
+    console.log('Links in DOM:', g.selectAll('.link').size());
+    
+    // Debug: Check if nodes have positions
+    console.log('Node positions:');
+    nodes.forEach(node => {
+        console.log(`  ${node.title}: (${node.x}, ${node.y})`);
+    });
+    
+    // Debug: Check SVG structure
+    console.log('SVG structure:', g.node());
 }
 
 // Drag functions
@@ -426,11 +473,17 @@ function handleNodeClick(event, d) {
             selectedNodes.splice(index, 1);
             // Remove highlight
             d3.select(event.currentTarget)
-                .select('circle')
+                .classed('selected', false)
+                .select('rect')
                 .transition()
                 .duration(300)
-                .attr('stroke-width', 1.5)
-                .attr('stroke', '#999');
+                .attr('stroke-width', 2)
+                .attr('stroke', '#222');
+            // Reset text styling
+            d3.select(event.currentTarget)
+                .select('text')
+                .attr('font-weight', 'bold')
+                .attr('fill', '#222');
         } else {
             // If we already have 2 nodes selected, remove the first one
             if (selectedNodes.length >= 2) {
@@ -438,11 +491,18 @@ function handleNodeClick(event, d) {
                 // Remove highlight from oldest node
                 d3.selectAll('.node')
                     .filter(n => n.id === oldestNode.id)
-                    .select('circle')
+                    .classed('selected', false)
+                    .select('rect')
                     .transition()
                     .duration(300)
-                    .attr('stroke-width', 1.5)
-                    .attr('stroke', '#999');
+                    .attr('stroke-width', 2)
+                    .attr('stroke', '#222');
+                // Reset text styling
+                d3.selectAll('.node')
+                    .filter(n => n.id === oldestNode.id)
+                    .select('text')
+                    .attr('font-weight', 'bold')
+                    .attr('fill', '#222');
             }
             
             // Add the new node to selection
@@ -450,11 +510,17 @@ function handleNodeClick(event, d) {
             
             // Add highlight
             d3.select(event.currentTarget)
-                .select('circle')
+                .classed('selected', true)
+                .select('rect')
                 .transition()
                 .duration(300)
-                .attr('stroke-width', 3)
+                .attr('stroke-width', 4)
                 .attr('stroke', '#ff9900');
+            // Make text bold and change color
+            d3.select(event.currentTarget)
+                .select('text')
+                .attr('font-weight', 'bolder')
+                .attr('fill', '#000');
         }
         
         // Update selection status
@@ -475,9 +541,16 @@ function handleNodeClick(event, d) {
         selectedNodes = [];
         
         // Clear existing node highlighting
-        d3.selectAll('.node circle')
-            .attr('stroke', '#000')
-            .attr('stroke-width', 1);
+        d3.selectAll('.node')
+            .classed('selected', false)
+            .select('rect')
+            .attr('stroke', '#222')
+            .attr('stroke-width', 2);
+        
+        // Reset text styling for all nodes
+        d3.selectAll('.node text')
+            .attr('font-weight', 'bold')
+            .attr('fill', '#222');
         
         // Clear existing edge highlighting
         d3.selectAll('.link')
@@ -497,11 +570,20 @@ function handleNodeClick(event, d) {
         selectedNode = d.id;
         selectedLink = null;
         
-        // Highlight the selected node
+        // Highlight the selected node with enhanced visual feedback
         d3.select(event.currentTarget)
-            .select('circle')
+            .classed('selected', true)
+            .select('rect')
             .attr('stroke', '#ff0000')
-            .attr('stroke-width', 3);
+            .attr('stroke-width', 4)
+            .style('filter', 'drop-shadow(0 0 6px rgba(255, 0, 0, 0.5))');
+        
+        // Make text bolder and change color
+        d3.select(event.currentTarget)
+            .select('text')
+            .attr('font-weight', 'bolder')
+            .attr('fill', '#000')
+            .style('text-shadow', '1px 1px 2px rgba(255, 255, 255, 0.8)');
     } else {
         // Clicked same node again - clear selection
         selectedNode = null;
@@ -509,9 +591,18 @@ function handleNodeClick(event, d) {
         
         // Clear highlighting
         d3.select(event.currentTarget)
-            .select('circle')
-            .attr('stroke', '#000')
-            .attr('stroke-width', 1);
+            .classed('selected', false)
+            .select('rect')
+            .attr('stroke', '#222')
+            .attr('stroke-width', 2)
+            .style('filter', null);
+        
+        // Reset text styling
+        d3.select(event.currentTarget)
+            .select('text')
+            .attr('font-weight', 'bold')
+            .attr('fill', '#222')
+            .style('text-shadow', null);
         
         // Update selection status
         updateSelectionStatus();
@@ -550,9 +641,18 @@ function handleLinkClick(event, d) {
         .classed('selected', l => l.id === d.id);
     
     // Unhighlight any selected node
-    d3.selectAll('.node circle')
-        .attr('stroke', '#000')
-        .attr('stroke-width', 1);
+    d3.selectAll('.node')
+        .classed('selected', false)
+        .select('rect')
+        .attr('stroke', '#222')
+        .attr('stroke-width', 2)
+        .style('filter', null);
+    
+    // Reset text styling for all nodes
+    d3.selectAll('.node text:first-of-type')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#222')
+        .style('text-shadow', null);
     
     // Show the detach button
     document.getElementById('detach-btn').style.display = 'block';
@@ -721,9 +821,18 @@ function resetView() {
     selectedLink = null;
     
     // Reset node styles
-    d3.selectAll('.node circle')
-        .attr('stroke', '#000')
-        .attr('stroke-width', 1);
+    d3.selectAll('.node')
+        .classed('selected', false)
+        .select('rect')
+        .attr('stroke', '#222')
+        .attr('stroke-width', 2)
+        .style('filter', null);
+    
+    // Reset text styling for all nodes
+    d3.selectAll('.node text:first-of-type')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#222')
+        .style('text-shadow', null);
     
     // Request layout from server
     fetch('/api/graph/layout')
@@ -814,9 +923,18 @@ function handleBackgroundClick(event) {
     updateSelectionStatus();
     
     // Unhighlight all nodes and links
-    d3.selectAll('.node circle')
-        .attr('stroke', '#000')
-        .attr('stroke-width', 1);
+    d3.selectAll('.node')
+        .classed('selected', false)
+        .select('rect')
+        .attr('stroke', '#222')
+        .attr('stroke-width', 2)
+        .style('filter', null);
+    
+    // Reset text styling for all nodes
+    d3.selectAll('.node text')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#222')
+        .style('text-shadow', null);
     
     d3.selectAll('.link')
         .classed('selected', false);

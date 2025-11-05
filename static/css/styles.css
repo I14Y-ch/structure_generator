@@ -194,18 +194,14 @@
     border-color: #dae0e5;
 }
 
-/* I14Y Link Icon Styling */
-.i14y-link-icon {
-    cursor: help;
+/* Selected node styling */
+.node.selected rect {
+    stroke-width: 4px !important;
+    filter: drop-shadow(0 0 6px rgba(255, 0, 0, 0.5)) !important;
 }
 
-.i14y-link-icon:hover circle {
-    fill: #218838;
-    transform: scale(1.1);
-    transition: all 0.2s ease;
-}
-
-.i14y-link-icon:hover path {
-    stroke: #f8f9fa;
-    transition: all 0.2s ease;
+.node.selected text:first-of-type {
+    font-weight: bolder !important;
+    fill: #000 !important;
+    text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8) !important;
 }

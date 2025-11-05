@@ -170,7 +170,10 @@
             <!-- Main Graph Area -->
             <div class="col-md-7">
                 <div class="main-content">
-                    <div id="graph-container"></div>
+                    <div id="graph-container">
+                        <!-- Debug info will be added here -->
+                        <div id="debug-info" style="position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border: 1px solid #ccc; z-index: 1000; max-width: 400px;"></div>
+                    </div>
                 </div>
             </div>
 
@@ -355,8 +358,35 @@
                         <input type="text" class="form-control" id="class-title" required>
                     </div>
                     <div class="mb-3">
-                        <label for="class-description" class="form-label">Description:</label>
-                        <textarea class="form-control" id="class-description" rows="3"></textarea>
+                        <label class="form-label">Description (Multilingual):</label>
+                        <ul class="nav nav-tabs" id="class-description-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="class-de-tab" data-bs-toggle="tab" data-bs-target="#class-de-description" type="button" role="tab" aria-controls="class-de-description" aria-selected="true">DE</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="class-fr-tab" data-bs-toggle="tab" data-bs-target="#class-fr-description" type="button" role="tab" aria-controls="class-fr-description" aria-selected="false">FR</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="class-it-tab" data-bs-toggle="tab" data-bs-target="#class-it-description" type="button" role="tab" aria-controls="class-it-description" aria-selected="false">IT</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="class-en-tab" data-bs-toggle="tab" data-bs-target="#class-en-description" type="button" role="tab" aria-controls="class-en-description" aria-selected="false">EN</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="class-description-tab-content">
+                            <div class="tab-pane fade show active" id="class-de-description" role="tabpanel" aria-labelledby="class-de-tab">
+                                <textarea class="form-control mt-2" id="class-description-de" rows="3" placeholder="German description"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="class-fr-description" role="tabpanel" aria-labelledby="class-fr-tab">
+                                <textarea class="form-control mt-2" id="class-description-fr" rows="3" placeholder="French description"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="class-it-description" role="tabpanel" aria-labelledby="class-it-tab">
+                                <textarea class="form-control mt-2" id="class-description-it" rows="3" placeholder="Italian description"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="class-en-description" role="tabpanel" aria-labelledby="class-en-tab">
+                                <textarea class="form-control mt-2" id="class-description-en" rows="3" placeholder="English description"></textarea>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -651,6 +681,13 @@
             return obj.de || obj.en || obj.fr || obj.it || obj.rm || Object.values(obj)[0] || '';
         }
         
+        // Helper function to get language-specific text from multilingual objects
+        function getLanguageText(obj, lang) {
+            if (!obj) return '';
+            if (typeof obj === 'string') return obj;
+            return obj[lang] || '';
+        }
+        
         // Helper function to escape HTML
         function escapeHtml(unsafe) {
             if (!unsafe) return '';
@@ -796,7 +833,7 @@
                     // ...
 
                     // Truncate description to first 50 words
-                    let description = node.description || 'None';
+                    let description = getLanguageText(node.description, 'de') || getLanguageText(node.description, 'en') || getLanguageText(node.description, 'fr') || getLanguageText(node.description, 'it') || 'None';
                     const words = description.split(/\s+/);
                     if (words.length > 50) {
                         description = words.slice(0, 50).join(' ') + '...';
@@ -851,13 +888,67 @@
                         mainInfo = `
                             <strong>Type:</strong> ${node.type}<br>
                             <div class="mb-3 mt-3">
-                                <label for="edit-dataset-title" class="form-label small">Title:</label>
-                                <input type="text" class="form-control form-control-sm" id="edit-dataset-title" value="${node.title}" ${isLinked ? 'readonly' : ''}>
+                                <label class="form-label small">Title:</label>
+                                <ul class="nav nav-tabs" id="dataset-title-tabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="dataset-de-title-tab" data-bs-toggle="tab" data-bs-target="#dataset-de-title" type="button" role="tab" aria-controls="dataset-de-title" aria-selected="true">DE</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dataset-fr-title-tab" data-bs-toggle="tab" data-bs-target="#dataset-fr-title" type="button" role="tab" aria-controls="dataset-fr-title" aria-selected="false">FR</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dataset-it-title-tab" data-bs-toggle="tab" data-bs-target="#dataset-it-title" type="button" role="tab" aria-controls="dataset-it-title" aria-selected="false">IT</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dataset-en-title-tab" data-bs-toggle="tab" data-bs-target="#dataset-en-title" type="button" role="tab" aria-controls="dataset-en-title" aria-selected="false">EN</button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="dataset-title-tab-content">
+                                    <div class="tab-pane fade show active" id="dataset-de-title" role="tabpanel" aria-labelledby="dataset-de-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-dataset-title-de" value="${escapeHtml(getLanguageText(node.title, 'de'))}" ${isLinked ? 'readonly' : ''} placeholder="German title">
+                                    </div>
+                                    <div class="tab-pane fade" id="dataset-fr-title" role="tabpanel" aria-labelledby="dataset-fr-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-dataset-title-fr" value="${escapeHtml(getLanguageText(node.title, 'fr'))}" ${isLinked ? 'readonly' : ''} placeholder="French title">
+                                    </div>
+                                    <div class="tab-pane fade" id="dataset-it-title" role="tabpanel" aria-labelledby="dataset-it-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-dataset-title-it" value="${escapeHtml(getLanguageText(node.title, 'it'))}" ${isLinked ? 'readonly' : ''} placeholder="Italian title">
+                                    </div>
+                                    <div class="tab-pane fade" id="dataset-en-title" role="tabpanel" aria-labelledby="dataset-en-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-dataset-title-en" value="${escapeHtml(getLanguageText(node.title, 'en'))}" ${isLinked ? 'readonly' : ''} placeholder="English title">
+                                    </div>
+                                </div>
                                 ${isLinked ? '<small class="text-muted">Title is managed by I14Y</small>' : ''}
                             </div>
                             <div class="mb-3">
-                                <label for="edit-dataset-description" class="form-label small">Description:</label>
-                                <textarea class="form-control form-control-sm" id="edit-dataset-description" rows="3" ${isLinked ? 'readonly' : ''}>${node.description}</textarea>
+                                <label class="form-label small">Description:</label>
+                                <ul class="nav nav-tabs" id="dataset-description-tabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="dataset-de-desc-tab" data-bs-toggle="tab" data-bs-target="#dataset-de-description" type="button" role="tab" aria-controls="dataset-de-description" aria-selected="true">DE</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dataset-fr-desc-tab" data-bs-toggle="tab" data-bs-target="#dataset-fr-description" type="button" role="tab" aria-controls="dataset-fr-description" aria-selected="false">FR</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dataset-it-desc-tab" data-bs-toggle="tab" data-bs-target="#dataset-it-description" type="button" role="tab" aria-controls="dataset-it-description" aria-selected="false">IT</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="dataset-en-desc-tab" data-bs-toggle="tab" data-bs-target="#dataset-en-description" type="button" role="tab" aria-controls="dataset-en-description" aria-selected="false">EN</button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="dataset-description-tab-content">
+                                    <div class="tab-pane fade show active" id="dataset-de-description" role="tabpanel" aria-labelledby="dataset-de-desc-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-dataset-description-de" rows="3" ${isLinked ? 'readonly' : ''} placeholder="German description">${escapeHtml(getLanguageText(node.description, 'de'))}</textarea>
+                                    </div>
+                                    <div class="tab-pane fade" id="dataset-fr-description" role="tabpanel" aria-labelledby="dataset-fr-desc-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-dataset-description-fr" rows="3" ${isLinked ? 'readonly' : ''} placeholder="French description">${escapeHtml(getLanguageText(node.description, 'fr'))}</textarea>
+                                    </div>
+                                    <div class="tab-pane fade" id="dataset-it-description" role="tabpanel" aria-labelledby="dataset-it-desc-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-dataset-description-it" rows="3" ${isLinked ? 'readonly' : ''} placeholder="Italian description">${escapeHtml(getLanguageText(node.description, 'it'))}</textarea>
+                                    </div>
+                                    <div class="tab-pane fade" id="dataset-en-description" role="tabpanel" aria-labelledby="dataset-en-desc-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-dataset-description-en" rows="3" ${isLinked ? 'readonly' : ''} placeholder="English description">${escapeHtml(getLanguageText(node.description, 'en'))}</textarea>
+                                    </div>
+                                </div>
                                 ${isLinked ? '<small class="text-muted">Description is managed on I14Y</small>' : ''}
                             </div>
                             ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
@@ -877,8 +968,35 @@
                                     <input type="text" class="form-control form-control-sm" id="edit-node-title" value="${node.title}">
                                 </div>
                                 <div class="mb-3">
-                                    <label for="edit-node-description" class="form-label small">Description:</label>
-                                    <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
+                                    <label class="form-label small">Description (Multilingual):</label>
+                                    <ul class="nav nav-tabs" id="class-edit-description-tabs" role="tablist">
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link active" id="class-edit-de-tab" data-bs-toggle="tab" data-bs-target="#class-edit-de-description" type="button" role="tab" aria-controls="class-edit-de-description" aria-selected="true">DE</button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link" id="class-edit-fr-tab" data-bs-toggle="tab" data-bs-target="#class-edit-fr-description" type="button" role="tab" aria-controls="class-edit-fr-description" aria-selected="false">FR</button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link" id="class-edit-it-tab" data-bs-toggle="tab" data-bs-target="#class-edit-it-description" type="button" role="tab" aria-controls="class-edit-it-description" aria-selected="false">IT</button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link" id="class-edit-en-tab" data-bs-toggle="tab" data-bs-target="#class-edit-en-description" type="button" role="tab" aria-controls="class-edit-en-description" aria-selected="false">EN</button>
+                                        </li>
+                                    </ul>
+                                    <div class="tab-content" id="class-edit-description-tab-content">
+                                        <div class="tab-pane fade show active" id="class-edit-de-description" role="tabpanel" aria-labelledby="class-edit-de-tab">
+                                            <textarea class="form-control form-control-sm mt-2" id="edit-class-description-de" rows="3" placeholder="German description">${escapeHtml(getLanguageText(node.description, 'de'))}</textarea>
+                                        </div>
+                                        <div class="tab-pane fade" id="class-edit-fr-description" role="tabpanel" aria-labelledby="class-edit-fr-tab">
+                                            <textarea class="form-control form-control-sm mt-2" id="edit-class-description-fr" rows="3" placeholder="French description">${escapeHtml(getLanguageText(node.description, 'fr'))}</textarea>
+                                        </div>
+                                        <div class="tab-pane fade" id="class-edit-it-description" role="tabpanel" aria-labelledby="class-edit-it-tab">
+                                            <textarea class="form-control form-control-sm mt-2" id="edit-class-description-it" rows="3" placeholder="Italian description">${escapeHtml(getLanguageText(node.description, 'it'))}</textarea>
+                                        </div>
+                                        <div class="tab-pane fade" id="class-edit-en-description" role="tabpanel" aria-labelledby="class-edit-en-tab">
+                                            <textarea class="form-control form-control-sm mt-2" id="edit-class-description-en" rows="3" placeholder="English description">${escapeHtml(getLanguageText(node.description, 'en'))}</textarea>
+                                        </div>
+                                    </div>
                                 </div>
                                 <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
                                 <button class="btn btn-warning btn-sm w-100 mb-2" onclick="confirmConvertToDataset()">Convert to Dataset</button>
@@ -917,7 +1035,7 @@
                                 const conceptTitle = getMultilingualText(node.i14y_data.title || node.i14y_data.name) || 'Unknown Concept';
                                 const conceptPublisher = getMultilingualText(node.i14y_data.publisherName || node.i14y_data.publisher?.name) || 'Unknown Publisher';
                                 const conceptDescription = getMultilingualText(node.i14y_data.description) || 'No description available';
-                                const conceptType = node.i14y_data.conceptValueType || node.i14y_data.conceptType || 'Unknown Type';
+                                const conceptType = node.i14y_data.conceptValueType || node.i14y_data.conceptType || '';
                                 
                                 // Truncate description if too long
                                 let truncatedDescription = conceptDescription;
@@ -926,11 +1044,14 @@
                                     truncatedDescription = words.slice(0, 20).join(' ') + '...';
                                 }
                                 
+                                // Build type line only if type is available
+                                const typeInfo = conceptType ? `<strong>Type:</strong> ${escapeHtml(conceptType)}<br>` : '';
+                                
                                 conceptDetails = `
                                     <div class="mb-3 p-3 border rounded bg-light">
                                         <h6 class="text-primary mb-2">🔗 Linked I14Y Concept</h6>
                                         <strong>Title:</strong> ${escapeHtml(conceptTitle)}<br>
-                                        <strong>Type:</strong> ${escapeHtml(conceptType)}<br>
+                                        ${typeInfo}
                                         <strong>Publisher:</strong> ${escapeHtml(conceptPublisher)}<br>
                                         <strong>Description:</strong> <span class="small text-muted">${escapeHtml(truncatedDescription)}</span><br>
                                         <strong>Concept ID:</strong> <code class="small">${escapeHtml(conceptId)}</code>
@@ -981,8 +1102,35 @@
                                 <div class="form-text">Name used in your dataset</div>
                             </div>
                             <div class="mb-3">
-                                <label for="edit-data-element-description" class="form-label small">Description:</label>
-                                <textarea class="form-control form-control-sm" id="edit-data-element-description" rows="3">${escapeHtml(node.description || '')}</textarea>
+                                <label class="form-label small">Description:</label>
+                                <ul class="nav nav-tabs" id="description-tabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="de-tab" data-bs-toggle="tab" data-bs-target="#de-description" type="button" role="tab" aria-controls="de-description" aria-selected="true">DE</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="fr-tab" data-bs-toggle="tab" data-bs-target="#fr-description" type="button" role="tab" aria-controls="fr-description" aria-selected="false">FR</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="it-tab" data-bs-toggle="tab" data-bs-target="#it-description" type="button" role="tab" aria-controls="it-description" aria-selected="false">IT</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="en-tab" data-bs-toggle="tab" data-bs-target="#en-description" type="button" role="tab" aria-controls="en-description" aria-selected="false">EN</button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="description-tab-content">
+                                    <div class="tab-pane fade show active" id="de-description" role="tabpanel" aria-labelledby="de-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-data-element-description-de" rows="3" placeholder="German description">${escapeHtml(getLanguageText(node.description, 'de'))}</textarea>
+                                    </div>
+                                    <div class="tab-pane fade" id="fr-description" role="tabpanel" aria-labelledby="fr-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-data-element-description-fr" rows="3" placeholder="French description">${escapeHtml(getLanguageText(node.description, 'fr'))}</textarea>
+                                    </div>
+                                    <div class="tab-pane fade" id="it-description" role="tabpanel" aria-labelledby="it-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-data-element-description-it" rows="3" placeholder="Italian description">${escapeHtml(getLanguageText(node.description, 'it'))}</textarea>
+                                    </div>
+                                    <div class="tab-pane fade" id="en-description" role="tabpanel" aria-labelledby="en-tab">
+                                        <textarea class="form-control form-control-sm mt-2" id="edit-data-element-description-en" rows="3" placeholder="English description">${escapeHtml(getLanguageText(node.description, 'en'))}</textarea>
+                                    </div>
+                                </div>
                             </div>
                             <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDataElementInfo()">Update Data Element</button>
                             ${conceptLinkInfo}
@@ -1000,7 +1148,7 @@
                                 </div>
                                 <div class="mb-3">
                                     <label for="edit-node-description" class="form-label small">Description:</label>
-                                    <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${node.description}</textarea>
+                                    <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${getLanguageText(node.description, 'de') || getLanguageText(node.description, 'en') || ''}</textarea>
                                 </div>
                                 <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
                                 <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showLinkToI14YModal()">Link to I14Y Concept</button>
@@ -1037,11 +1185,13 @@
 
                     // Show or hide constraints section based on node type
                     const constraintsSection = document.getElementById('constraints-section');
-                    if (node.type === 'dataset') {
-                        // Hide constraints for dataset nodes
+                    if (node.type === 'dataset' || 
+                        node.type === 'class' || 
+                        (node.type === 'data_element' && node.conforms_to_concept_uri)) {
+                        // Hide constraints for dataset nodes, class nodes, and data elements with conformsTo link
                         if (constraintsSection) constraintsSection.style.display = 'none';
                     } else {
-                        // Show constraints for other node types
+                        // Show constraints only for standalone data elements and concepts
                         if (constraintsSection) constraintsSection.style.display = 'block';
                         
                         // Show/hide constraint groups based on node type
@@ -1081,6 +1231,9 @@
                     }
                 });
         }
+
+        // Make loadNodeDetails globally accessible
+        window.loadNodeDetails = loadNodeDetails;
 
         function loadEdgeDetails(edgeId) {
             // Load edge information
@@ -1188,6 +1341,9 @@
             document.getElementById('edge-status').style.display = 'none';
             document.getElementById('no-node-selected').style.display = 'block';
         }
+        
+        // Make clearEdgeSelection globally accessible
+        window.clearEdgeSelection = clearEdgeSelection;
         
         // Include the rest of the application functions...
     </script>

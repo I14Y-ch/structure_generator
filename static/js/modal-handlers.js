@@ -5,7 +5,10 @@
 function showAddClassModal() {
     // Clear previous values
     document.getElementById('class-title').value = '';
-    document.getElementById('class-description').value = '';
+    document.getElementById('class-description-de').value = '';
+    document.getElementById('class-description-fr').value = '';
+    document.getElementById('class-description-it').value = '';
+    document.getElementById('class-description-en').value = '';
     
     // Show the modal
     new bootstrap.Modal(document.getElementById('addClassModal')).show();
@@ -14,12 +17,23 @@ function showAddClassModal() {
 // Add Class from Modal
 function addClass() {
     const title = document.getElementById('class-title').value;
-    const description = document.getElementById('class-description').value;
+    const descriptionDe = document.getElementById('class-description-de').value;
+    const descriptionFr = document.getElementById('class-description-fr').value;
+    const descriptionIt = document.getElementById('class-description-it').value;
+    const descriptionEn = document.getElementById('class-description-en').value;
 
     if (!title) {
         alert('Title is required');
         return;
     }
+
+    // Build multilingual description object
+    const description = {
+        de: descriptionDe,
+        fr: descriptionFr,
+        it: descriptionIt,
+        en: descriptionEn
+    };
 
     fetch('/api/nodes', {
         method: 'POST',
@@ -38,7 +52,10 @@ function addClass() {
             
             // Clear form fields
             document.getElementById('class-title').value = '';
-            document.getElementById('class-description').value = '';
+            document.getElementById('class-description-de').value = '';
+            document.getElementById('class-description-fr').value = '';
+            document.getElementById('class-description-it').value = '';
+            document.getElementById('class-description-en').value = '';
             
             // Reload the graph with D3.js
             loadGraphWithD3();
@@ -573,14 +590,17 @@ function selectI14YLinkResult(index) {
         title = result.identifier;
     }
     
-    // Prepare description for display
-    let description = '';
-    if (typeof result.description === 'object') {
-        description = result.description.en || result.description.de || 
-                     result.description.fr || result.description.it || 
-                     Object.values(result.description)[0] || '';
-    } else if (typeof result.description === 'string') {
+    // Prepare description - keep multilingual structure for backend
+    let description = result.description;
+    if (typeof result.description === 'string') {
+        // If it's a string, convert to multilingual object with German as default
+        description = { de: result.description };
+    } else if (typeof result.description === 'object') {
+        // Keep the full multilingual object
         description = result.description;
+    } else {
+        // Fallback to empty multilingual object
+        description = { de: '' };
     }
     
     // Extract publisher information
@@ -659,7 +679,7 @@ function selectI14YLinkResult(index) {
         title: title,
         description: description,
         type: result.type || 'Concept',
-        publisher: publisher
+        publisherName: publisher  // Use publisherName to match UI expectations
     };
     
     // Send the link request to the server
@@ -1470,3 +1490,70 @@ window.showLinkDataElementToConceptModal = showLinkToI14YModal;
 window.showI14YDatasetSearchModal = showI14YDatasetSearchModal;
 window.searchI14YDatasets = searchI14YDatasets;
 window.selectI14YDatasetResult = selectI14YDatasetResult;
+
+// Update Data Element Info function
+function updateDataElementInfo() {
+    if (!selectedNodeId) {
+        alert('No data element selected');
+        return;
+    }
+
+    // Collect form data
+    const localName = document.getElementById('edit-data-element-local-name').value.trim();
+    const descriptionDe = document.getElementById('edit-data-element-description-de').value.trim();
+    const descriptionFr = document.getElementById('edit-data-element-description-fr').value.trim();
+    const descriptionIt = document.getElementById('edit-data-element-description-it').value.trim();
+    const descriptionEn = document.getElementById('edit-data-element-description-en').value.trim();
+
+    if (!localName) {
+        alert('Local name is required');
+        return;
+    }
+
+    // Prepare multilingual description object
+    const description = {};
+    if (descriptionDe) description.de = descriptionDe;
+    if (descriptionFr) description.fr = descriptionFr;
+    if (descriptionIt) description.it = descriptionIt;
+    if (descriptionEn) description.en = descriptionEn;
+
+    // Prepare update data
+    const updateData = {
+        local_name: localName,
+        description: description
+    };
+
+    // Send update request
+    fetch(`/api/nodes/${selectedNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Data element updated.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph to reflect changes
+            loadGraphWithD3();
+            
+            // Reload node details to show updated information
+            loadNodeDetails(selectedNodeId);
+        } else {
+            alert('Error updating data element: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating data element: ' + error.message);
+        console.error('Error updating data element:', error);
+    });
+}
+
+// Export the function to global scope
+window.updateDataElementInfo = updateDataElementInfo;

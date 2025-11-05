@@ -157,3 +157,351 @@ window.showCSVImportModal = showCSVImportModal;
 window.importCSV = importCSV;
 window.showXSDImportModal = showXSDImportModal;
 window.importXSD = importXSD;
+
+// Update dataset information
+function updateDatasetInfo() {
+    // Collect multilingual titles
+    const title = {
+        de: document.getElementById('edit-dataset-title-de').value.trim(),
+        fr: document.getElementById('edit-dataset-title-fr').value.trim(),
+        it: document.getElementById('edit-dataset-title-it').value.trim(),
+        en: document.getElementById('edit-dataset-title-en').value.trim()
+    };
+
+    // Collect multilingual descriptions
+    const description = {
+        de: document.getElementById('edit-dataset-description-de').value.trim(),
+        fr: document.getElementById('edit-dataset-description-fr').value.trim(),
+        it: document.getElementById('edit-dataset-description-it').value.trim(),
+        en: document.getElementById('edit-dataset-description-en').value.trim()
+    };
+
+    // Check if at least one title is provided
+    const hasTitle = Object.values(title).some(t => t.length > 0);
+    if (!hasTitle) {
+        alert('At least one title (in any language) is required');
+        return;
+    }
+
+    fetch('/api/dataset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            title: title,
+            description: description
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Dataset updated.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+
+            // Reload the graph to show updated information
+            loadGraphWithD3();
+        } else {
+            alert('Error updating dataset: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating dataset: ' + error.message);
+        console.error('Error updating dataset:', error);
+    });
+}
+
+// Update data element information
+function updateDataElementInfo() {
+    if (!selectedNodeId) {
+        alert('No data element selected');
+        return;
+    }
+
+    const localName = document.getElementById('edit-data-element-local-name').value;
+    
+    // Collect multilingual descriptions
+    const description = {
+        de: document.getElementById('edit-data-element-description-de').value.trim(),
+        fr: document.getElementById('edit-data-element-description-fr').value.trim(),
+        it: document.getElementById('edit-data-element-description-it').value.trim(),
+        en: document.getElementById('edit-data-element-description-en').value.trim()
+    };
+
+    if (!localName) {
+        alert('Local name is required');
+        return;
+    }
+
+    fetch(`/api/data-elements/${selectedNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            title: localName,
+            local_name: localName,
+            description: description
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Data element updated.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph to show updated information
+            loadGraphWithD3();
+        } else {
+            alert('Error updating data element: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating data element: ' + error.message);
+        console.error('Error updating data element:', error);
+    });
+}
+
+// Update node information (for class and concept nodes)
+function updateNodeInfo() {
+    if (!selectedNodeId) {
+        alert('No node selected');
+        return;
+    }
+
+    const title = document.getElementById('edit-node-title').value;
+    
+    // Check if we're editing a class with multilingual descriptions
+    const classDescDe = document.getElementById('edit-class-description-de');
+    let description;
+    
+    if (classDescDe) {
+        // Class node with multilingual descriptions
+        description = {
+            de: classDescDe.value,
+            fr: document.getElementById('edit-class-description-fr').value,
+            it: document.getElementById('edit-class-description-it').value,
+            en: document.getElementById('edit-class-description-en').value
+        };
+    } else {
+        // Fallback to single-language description for other node types or legacy data
+        const descField = document.getElementById('edit-node-description');
+        description = descField ? descField.value : '';
+    }
+
+    if (!title) {
+        alert('Title is required');
+        return;
+    }
+
+    fetch(`/api/nodes/${selectedNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            title: title,
+            description: description
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Node updated.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph to show updated information
+            loadGraphWithD3();
+        } else {
+            alert('Error updating node: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating node: ' + error.message);
+        console.error('Error updating node:', error);
+    });
+}
+
+// Unlink data element from I14Y concept
+function unlinkDataElementFromConcept() {
+    if (!selectedNodeId) {
+        alert('No data element selected');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to detach this data element from its I14Y concept?')) {
+        return;
+    }
+
+    fetch(`/api/data-elements/${selectedNodeId}/unlink-concept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Data element detached from concept.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph and node details
+            loadGraphWithD3();
+            loadNodeDetails(selectedNodeId);
+        } else {
+            alert('Error unlinking data element: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error unlinking data element: ' + error.message);
+        console.error('Error unlinking data element:', error);
+    });
+}
+
+// Disconnect I14Y dataset
+function disconnectI14YDataset() {
+    if (!confirm('Are you sure you want to disconnect this dataset from I14Y?')) {
+        return;
+    }
+
+    fetch('/api/i14y/dataset/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Dataset disconnected from I14Y.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph
+            loadGraphWithD3();
+        } else {
+            alert('Error disconnecting dataset: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error disconnecting dataset: ' + error.message);
+        console.error('Error disconnecting dataset:', error);
+    });
+}
+
+// Disconnect I14Y concept
+function disconnectI14YConcept() {
+    if (!selectedNodeId) {
+        alert('No concept selected');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to disconnect this concept from I14Y?')) {
+        return;
+    }
+
+    fetch(`/api/nodes/${selectedNodeId}/disconnect-i14y`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Concept disconnected from I14Y.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph and node details
+            loadGraphWithD3();
+            loadNodeDetails(selectedNodeId);
+        } else {
+            alert('Error disconnecting concept: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error disconnecting concept: ' + error.message);
+        console.error('Error disconnecting concept:', error);
+    });
+}
+
+// Apply SHACL constraints to selected node
+function applyConstraints() {
+    if (!selectedNodeId) {
+        alert('No node selected');
+        return;
+    }
+
+    // Collect constraint values
+    const minLength = document.getElementById('min-length').value;
+    const maxLength = document.getElementById('max-length').value;
+    const pattern = document.getElementById('pattern').value;
+    const inValues = document.getElementById('in-values').value;
+    const nodeReference = document.getElementById('node-reference').value;
+    const range = document.getElementById('range').value;
+    const datatype = document.getElementById('datatype').value;
+
+    // Prepare constraint data
+    const constraints = {};
+
+    if (minLength) constraints.min_length = parseInt(minLength);
+    if (maxLength) constraints.max_length = parseInt(maxLength);
+    if (pattern) constraints.pattern = pattern;
+    if (inValues) constraints.in_values = inValues.split(',').map(v => v.trim()).filter(v => v);
+    if (nodeReference) constraints.node_reference = nodeReference;
+    if (range) constraints.range = range;
+    if (datatype) constraints.datatype = datatype;
+
+    fetch(`/api/nodes/${selectedNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(constraints)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Constraints applied.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph to show updated information
+            loadGraphWithD3();
+        } else {
+            alert('Error applying constraints: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error applying constraints: ' + error.message);
+        console.error('Error applying constraints:', error);
+    });
+}
+
+// Export all functions to global scope
+window.updateDatasetInfo = updateDatasetInfo;
+window.updateDataElementInfo = updateDataElementInfo;
+window.updateNodeInfo = updateNodeInfo;
+window.applyConstraints = applyConstraints;
+window.unlinkDataElementFromConcept = unlinkDataElementFromConcept;
+window.disconnectI14YDataset = disconnectI14YDataset;
+window.disconnectI14YConcept = disconnectI14YConcept;

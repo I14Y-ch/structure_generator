@@ -579,7 +579,12 @@ class SHACLNode:
         self.id = node_id or str(uuid.uuid4())
         self.type = node_type  # 'dataset', 'data_element', 'concept', 'class'
         self.title = title
-        self.description = description
+        # Support both string and multilingual object descriptions
+        if isinstance(description, dict):
+            self.description = description
+        else:
+            # Convert legacy string descriptions to multilingual format
+            self.description = {'de': description} if description else {}
         
         # I14Y integration
         self.i14y_id = None  # For concepts from I14Y (the concept UUID)
@@ -697,15 +702,17 @@ class SHACLNode:
         # Extract multilingual descriptions from 'description' field
         desc_obj = concept_data.get('description', {})
         if isinstance(desc_obj, dict):
-            # Use German description as primary, fallback to other languages  
-            self.description = (desc_obj.get('de') or 
-                               desc_obj.get('en') or 
-                               desc_obj.get('fr') or 
-                               desc_obj.get('it') or 
-                               desc_obj.get('rm') or 
-                               '')
+            # Store the full multilingual description object
+            self.description = {
+                lang: desc for lang, desc in desc_obj.items() 
+                if lang in ['de', 'en', 'fr', 'it', 'rm'] and desc
+            }
+            # Ensure we have at least a German description as fallback
+            if not self.description:
+                self.description = {'de': ''}
         else:
-            self.description = str(desc_obj) if desc_obj else ''
+            # Handle legacy string descriptions
+            self.description = {'de': str(desc_obj)} if desc_obj else {'de': ''}
         
         # Set the concept URI for TTL export
         if self.i14y_id:
@@ -737,14 +744,17 @@ class SHACLNode:
         # Extract description from dataset data
         desc_obj = dataset_data.get('description', {})
         if isinstance(desc_obj, dict):
-            self.description = (desc_obj.get('de') or 
-                                desc_obj.get('en') or 
-                                desc_obj.get('fr') or 
-                                desc_obj.get('it') or 
-                                desc_obj.get('rm') or 
-                                '')
+            # Store the full multilingual description object
+            self.description = {
+                lang: desc for lang, desc in desc_obj.items() 
+                if lang in ['de', 'en', 'fr', 'it', 'rm'] and desc
+            }
+            # Ensure we have at least a German description as fallback
+            if not self.description:
+                self.description = {'de': ''}
         else:
-            self.description = str(desc_obj) if desc_obj else ''
+            # Handle legacy string descriptions
+            self.description = {'de': str(desc_obj)} if desc_obj else {'de': ''}
         
         # Set the dataset URI for references
         if self.i14y_id:
@@ -834,31 +844,30 @@ class SHACLNode:
         }
     
     def get_multilingual_description(self) -> Dict[str, str]:
-        """Get multilingual descriptions from I14Y data or fallback to single description"""
-        if self.i14y_data and 'description' in self.i14y_data:
-            desc_obj = self.i14y_data['description']
-            if isinstance(desc_obj, dict):
-                # Fill in missing languages with available ones
-                available_desc = (desc_obj.get('de') or 
-                                desc_obj.get('en') or 
-                                desc_obj.get('fr') or 
-                                desc_obj.get('it') or 
-                                self.description)
-                return {
-                    'de': desc_obj.get('de', available_desc),
-                    'en': desc_obj.get('en', available_desc),
-                    'fr': desc_obj.get('fr', available_desc),
-                    'it': desc_obj.get('it', available_desc)
-                }
-        
-        # Return same description for all languages as fallback
-        desc = self.description or self.title
-        return {
-            'de': desc,
-            'en': desc,
-            'fr': desc,
-            'it': desc
-        }
+        """Get multilingual descriptions, ensuring all supported languages are present"""
+        if isinstance(self.description, dict):
+            # Return the stored multilingual descriptions, filling in missing languages
+            base_desc = (self.description.get('de') or 
+                        self.description.get('en') or 
+                        self.description.get('fr') or 
+                        self.description.get('it') or 
+                        self.description.get('rm') or 
+                        '')
+            return {
+                'de': self.description.get('de', base_desc),
+                'en': self.description.get('en', base_desc),
+                'fr': self.description.get('fr', base_desc),
+                'it': self.description.get('it', base_desc)
+            }
+        else:
+            # Handle legacy string descriptions
+            desc = self.description or ''
+            return {
+                'de': desc,
+                'en': desc,
+                'fr': desc,
+                'it': desc
+            }
     
     def to_dict(self) -> Dict:
         connections_list = list(self.connections)
@@ -991,8 +1000,24 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     if not dataset_node:
         raise ValueError("No dataset node found")
     
+    # Helper function to extract text from multilingual objects or strings
+    def get_text_value(value, lang='de'):
+        """Extract text from a value that might be a string or multilingual dict"""
+        if value is None:
+            return ""
+        if isinstance(value, dict):
+            # Try requested language first, then fallback chain
+            return (value.get(lang) or 
+                   value.get('de') or 
+                   value.get('en') or 
+                   value.get('fr') or 
+                   value.get('it') or 
+                   next(iter(value.values()), ""))
+        return str(value)
+    
     # Generate a normalized dataset ID from title
-    dataset_id = dataset_node.title.lower().replace(' ', '_').replace('-', '_')
+    dataset_title_str = get_text_value(dataset_node.title, 'de')
+    dataset_id = dataset_title_str.lower().replace(' ', '_').replace('-', '_')
     for ch in "()":
         dataset_id = dataset_id.replace(ch, "")
     while "__" in dataset_id:
@@ -1067,8 +1092,14 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         cleaned = " ".join(str(text).split())
         return cleaned.replace('"', '\\"')
 
-    def norm_id(label: str) -> str:
-        base = (label or "").strip()
+    def norm_id(label) -> str:
+        """Normalize a label (string or multilingual dict) to a valid ID"""
+        # Extract text value if it's a multilingual dict
+        if isinstance(label, dict):
+            base = get_text_value(label, 'de')
+        else:
+            base = (label or "").strip()
+            
         if not base:
             base = "property"
         base = base.replace(" ", "_").replace("-", "_")
@@ -1086,17 +1117,34 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     g.add((dataset_shape, RDF.type, QB.DataStructureDefinition))
 
     # Add dataset metadata with multilingual support
-    ds_title = sanitize_literal(dataset_node.title)
-    ds_desc = sanitize_literal(dataset_node.description)
-
-    # Add multilingual titles and descriptions (following I14Y pattern)
-    # Only add one language tag to avoid duplicates
-    if ds_title:
-        safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, 'de')
-        safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, 'de')
-    if ds_desc:  # Primary language for description
-        safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, 'de')
-        safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, 'de')
+    # Handle both string and multilingual dict formats
+    if isinstance(dataset_node.title, dict):
+        # Multilingual title - add all available languages
+        for lang in ['de', 'fr', 'it', 'en']:
+            if lang in dataset_node.title and dataset_node.title[lang]:
+                title_text = sanitize_literal(dataset_node.title[lang])
+                safe_add_multilingual_property(dataset_shape, DCTERMS.title, title_text, lang)
+                safe_add_multilingual_property(dataset_shape, RDFS.label, title_text, lang)
+    else:
+        # Single language title
+        ds_title = sanitize_literal(dataset_node.title)
+        if ds_title:
+            safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, 'de')
+            safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, 'de')
+    
+    if isinstance(dataset_node.description, dict):
+        # Multilingual description - add all available languages
+        for lang in ['de', 'fr', 'it', 'en']:
+            if lang in dataset_node.description and dataset_node.description[lang]:
+                desc_text = sanitize_literal(dataset_node.description[lang])
+                safe_add_multilingual_property(dataset_shape, DCTERMS.description, desc_text, lang)
+                safe_add_multilingual_property(dataset_shape, RDFS.comment, desc_text, lang)
+    else:
+        # Single language description
+        ds_desc = sanitize_literal(dataset_node.description)
+        if ds_desc:
+            safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, 'de')
+            safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, 'de')
 
     # Add version and schema information (following I14Y pattern)
     PAV = Namespace("http://purl.org/pav/")
@@ -1139,16 +1187,30 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((class_uri, RDF.type, SH.NodeShape))
         g.add((class_uri, SH.closed, Literal(True)))
 
-        # Add class metadata
-        class_title = sanitize_literal(class_node.title)
-        class_desc = sanitize_literal(class_node.description)
+        # Add class metadata with multilingual support
+        if isinstance(class_node.title, dict):
+            # Multilingual title
+            for lang in ['de', 'fr', 'it', 'en']:
+                if lang in class_node.title and class_node.title[lang]:
+                    title_text = sanitize_literal(class_node.title[lang])
+                    safe_add_multilingual_property(class_uri, SH.name, title_text, lang)
+        else:
+            class_title = sanitize_literal(class_node.title)
+            if class_title:
+                safe_add_multilingual_property(class_uri, SH.name, class_title, "en")
 
-        if class_title:
-            safe_add_multilingual_property(class_uri, SH.name, class_title, "en")
-
-        if class_desc:
-            safe_add_multilingual_property(class_uri, DCTERMS.description, class_desc, "de")
-            safe_add_multilingual_property(class_uri, RDFS.comment, class_desc, "de")
+        if isinstance(class_node.description, dict):
+            # Multilingual description
+            for lang in ['de', 'fr', 'it', 'en']:
+                if lang in class_node.description and class_node.description[lang]:
+                    desc_text = sanitize_literal(class_node.description[lang])
+                    safe_add_multilingual_property(class_uri, DCTERMS.description, desc_text, lang)
+                    safe_add_multilingual_property(class_uri, RDFS.comment, desc_text, lang)
+        else:
+            class_desc = sanitize_literal(class_node.description)
+            if class_desc:
+                safe_add_multilingual_property(class_uri, DCTERMS.description, class_desc, "de")
+                safe_add_multilingual_property(class_uri, RDFS.comment, class_desc, "de")
 
         # Collect concepts and data elements connected to this class
         class_concepts = []
@@ -1538,19 +1600,24 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         if data_element.node_reference:
             g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
 
-        # Add multilingual titles and descriptions using the custom title
-        element_title = data_element.title  # Use the custom title
-        element_desc = data_element.description
-        
-        if element_title:
-            safe_add_multilingual_property(property_uri, DCTERMS.title, element_title, "de")
-            safe_add_multilingual_property(property_uri, RDFS.label, element_title, "de")
-            safe_add_multilingual_property(property_uri, SH.name, element_title, "de")
+        # Add multilingual titles and descriptions for data elements
+        element_titles = data_element.get_multilingual_title()
+        element_descriptions = data_element.get_multilingual_description()
 
-        if element_desc:
-            safe_add_multilingual_property(property_uri, DCTERMS.description, element_desc, "de")
-            safe_add_multilingual_property(property_uri, RDFS.comment, element_desc, "de")
-            safe_add_multilingual_property(property_uri, SH.description, element_desc, "de")
+        unique_element_titles = get_unique_lang_values(element_titles, sanitize_literal)
+        unique_element_descriptions = get_unique_lang_values(element_descriptions, sanitize_literal)
+
+        for lang, title in unique_element_titles.items():
+            sanitized_title = sanitize_literal(title)
+            safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+            safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
+
+        for lang, desc in unique_element_descriptions.items():
+            sanitized_desc = sanitize_literal(desc)
+            safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
+            safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
+            safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
@@ -2013,8 +2080,23 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         if not dataset_node:
             return "# No dataset found"
 
+        # Helper function to extract text from multilingual objects or strings
+        def get_text_value(value, lang='de'):
+            """Extract text from a value that might be a string or multilingual dict"""
+            if value is None:
+                return ""
+            if isinstance(value, dict):
+                # Try requested language first, then fallback chain
+                return (value.get(lang) or 
+                       value.get('de') or 
+                       value.get('en') or 
+                       value.get('fr') or 
+                       value.get('it') or 
+                       next(iter(value.values()), ""))
+            return str(value)
+
         # Generate proper I14Y dataset ID - normalize
-        raw_ds = dataset_node.title.strip() or "dataset"
+        raw_ds = get_text_value(dataset_node.title, 'de').strip() or "dataset"
         dataset_id = raw_ds.upper().replace(" ", "_").replace("-", "_")
 
         # Create RDF graph
@@ -2058,8 +2140,14 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             cleaned = " ".join(str(text).split())
             return cleaned.replace('"', '\\"')
 
-        def norm_id(label: str) -> str:
-            base = (label or "").strip()
+        def norm_id(label) -> str:
+            """Normalize a label (string or multilingual dict) to a valid ID"""
+            # Extract text value if it's a multilingual dict
+            if isinstance(label, dict):
+                base = get_text_value(label, 'de')
+            else:
+                base = (label or "").strip()
+                
             if not base:
                 base = "property"
             base = base.replace(" ", "_").replace("-", "_")
@@ -2077,19 +2165,38 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((dataset_shape, RDF.type, QB.DataStructureDefinition))
         g.add((dataset_shape, SH.closed, Literal(True)))
 
-        # Add dataset metadata
-        ds_title = sanitize_literal(dataset_node.title)
-        ds_desc = sanitize_literal(dataset_node.description)
+        # Add dataset metadata with multilingual support
+        if isinstance(dataset_node.title, dict):
+            # Multilingual title - add all available languages
+            for lang in ['de', 'fr', 'it', 'en']:
+                if lang in dataset_node.title and dataset_node.title[lang]:
+                    title_text = sanitize_literal(dataset_node.title[lang])
+                    safe_add_multilingual_property(dataset_shape, DCTERMS.title, title_text, lang)
+                    safe_add_multilingual_property(dataset_shape, RDFS.label, title_text, lang)
+                    safe_add_multilingual_property(dataset_shape, SH.name, title_text, lang)
+        else:
+            # Single language title
+            ds_title = sanitize_literal(dataset_node.title)
+            if ds_title:
+                safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, "de")
+                safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, "de")
+                safe_add_multilingual_property(dataset_shape, SH.name, ds_title, "de")
 
-        if ds_title:
-            safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, "de")
-            safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, "de")
-            safe_add_multilingual_property(dataset_shape, SH.name, ds_title, "de")
-
-        if ds_desc:
-            safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, "de")
-            safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, "de")
-            g.add((dataset_shape, SH.description, Literal(ds_desc, lang="de")))
+        if isinstance(dataset_node.description, dict):
+            # Multilingual description - add all available languages
+            for lang in ['de', 'fr', 'it', 'en']:
+                if lang in dataset_node.description and dataset_node.description[lang]:
+                    desc_text = sanitize_literal(dataset_node.description[lang])
+                    safe_add_multilingual_property(dataset_shape, DCTERMS.description, desc_text, lang)
+                    safe_add_multilingual_property(dataset_shape, RDFS.comment, desc_text, lang)
+                    g.add((dataset_shape, SH.description, Literal(desc_text, lang=lang)))
+        else:
+            # Single language description
+            ds_desc = sanitize_literal(dataset_node.description)
+            if ds_desc:
+                safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, "de")
+                safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, "de")
+                g.add((dataset_shape, SH.description, Literal(ds_desc, lang="de")))
 
         # Collect concepts and classes connected to dataset
         connected_concepts = []
@@ -2219,7 +2326,12 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             descriptions = class_node.get_multilingual_description()
 
             # Ensure we always have at least a basic label
-            class_title = sanitize_literal(class_node.title)
+            # Handle both string and dict title formats
+            if isinstance(class_node.title, dict):
+                class_title = sanitize_literal(get_text_value(class_node.title, 'de'))
+            else:
+                class_title = sanitize_literal(class_node.title)
+                
             if class_title:
                 # Add basic German label as fallback (required for I14Y visualization)
                 safe_add_multilingual_property(property_uri, RDFS.label, class_title, "de")
@@ -2751,7 +2863,13 @@ class FlaskSHACLGraphEditor:
         if 'title' in node_data:
             node.title = node_data['title']
         if 'description' in node_data:
-            node.description = node_data['description']
+            # Handle multilingual descriptions (dictionary) or simple string descriptions
+            if isinstance(node_data['description'], dict):
+                # Multilingual description - store as dictionary
+                node.description = node_data['description']
+            else:
+                # Simple string description - store as string
+                node.description = node_data['description']
         if 'datatype' in node_data:
             node.datatype = node_data['datatype']
         if 'min_length' in node_data:
@@ -2775,14 +2893,36 @@ class FlaskSHACLGraphEditor:
         """Delete a node from the graph"""
         if node_id not in self.nodes:
             return False
-            
-        # Remove connections to this node
+        
+        print(f"=== Deleting node {node_id} ===")
+        
+        # First, find and remove all edges connected to this node
+        edges_to_delete = []
+        for edge_id, edge in self.edges.items():
+            if edge.get('from') == node_id or edge.get('to') == node_id:
+                edges_to_delete.append(edge_id)
+                print(f"Marking edge for deletion: {edge_id}")
+        
+        # Delete the edges
+        for edge_id in edges_to_delete:
+            del self.edges[edge_id]
+            print(f"Deleted edge: {edge_id}")
+        
+        # Remove connections to this node from other nodes
         for other_id, node in self.nodes.items():
             if node_id in node.connections:
                 node.connections.remove(node_id)
-                
-        # Delete the node
+                print(f"Removed connection from node {other_id} to {node_id}")
+        
+        # Delete the node itself
+        deleted_node = self.nodes[node_id]
+        print(f"Deleting node: {deleted_node.type} - {deleted_node.title}")
         del self.nodes[node_id]
+        
+        print(f"Node {node_id} successfully deleted")
+        print(f"Remaining nodes: {len(self.nodes)}")
+        print(f"Remaining edges: {len(self.edges)}")
+        
         return True
     
     def get_node(self, node_id):
@@ -3068,7 +3208,8 @@ def get_graph():
             'title': node.title,
             'description': node.description,
             'type': node_type,
-            'i14y_id': node.i14y_id if hasattr(node, 'i14y_id') else None
+            'i14y_id': node.i14y_id if hasattr(node, 'i14y_id') else None,
+            'is_linked_to_concept': node.is_linked_to_concept if hasattr(node, 'is_linked_to_concept') else False
         })
     
     # Process all edges
@@ -3400,8 +3541,6 @@ def create_data_element():
             # Create standalone data element
             data_element = SHACLNode('data_element', title=local_name)
             data_element.local_name = local_name
-            data_element.description = data.get('description', '')
-            data_element.datatype = data.get('datatype', 'xsd:string')
             
             # If concept_data is provided, link to I14Y concept during creation
             if concept_data:
@@ -3410,6 +3549,37 @@ def create_data_element():
                     data_element.conforms_to_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{concept_id_from_data}/description"
                     data_element.is_linked_to_concept = True
                     data_element.i14y_data = concept_data
+                    
+                    # Extract multilingual descriptions from concept data
+                    desc_obj = concept_data.get('description')
+                    
+                    if desc_obj:
+                        if isinstance(desc_obj, dict):
+                            # Store the full multilingual description object
+                            multilingual_descriptions = {
+                                lang: desc for lang, desc in desc_obj.items()
+                                if lang in ['de', 'en', 'fr', 'it', 'rm'] and desc
+                            }
+                            # Ensure we have at least a German description as fallback
+                            if multilingual_descriptions:
+                                data_element.description = multilingual_descriptions
+                                print(f"Created data element with multilingual description: {list(multilingual_descriptions.keys())}")
+                            else:
+                                data_element.description = {'de': ''}
+                        elif isinstance(desc_obj, str) and desc_obj.strip():
+                            # Handle string descriptions
+                            data_element.description = {'de': desc_obj}
+                            print(f"Created data element with string description")
+                    else:
+                        # Use provided description if no concept description
+                        data_element.description = data.get('description', '')
+                else:
+                    data_element.description = data.get('description', '')
+            else:
+                # No concept data - use provided description or empty
+                data_element.description = data.get('description', '')
+                
+            data_element.datatype = data.get('datatype', 'xsd:string')
         
         # Add to editor
         editor.nodes[data_element.id] = data_element
@@ -3504,12 +3674,33 @@ def link_node_to_i14y_concept():
     node = editor.nodes[node_id]
     if node.type != 'data_element':
         return jsonify({"error": "Only data elements can be linked to I14Y concepts"}), 400
+    
+    # Check if already linked to a concept
+    print(f"Attempting to link data element {node_id} to concept")
+    print(f"Current is_linked_to_concept: {node.is_linked_to_concept}")
+    print(f"Current conforms_to_concept_uri: {node.conforms_to_concept_uri}")
+    
+    if node.is_linked_to_concept:
+        return jsonify({"error": "This data element is already linked to a concept. Please detach the existing concept first."}), 400
         
     concept_uri = data.get('concept_uri')
     concept_data = data.get('concept_data')
     
     if not concept_uri or not concept_data:
         return jsonify({"error": "Concept URI and data are required"}), 400
+    
+    # Debug logging
+    print(f"=== Linking data element to I14Y concept ===")
+    print(f"Node ID: {node_id}")
+    print(f"Concept URI: {concept_uri}")
+    print(f"Concept data keys: {concept_data.keys() if isinstance(concept_data, dict) else 'not a dict'}")
+    if isinstance(concept_data, dict) and 'description' in concept_data:
+        print(f"Description type: {type(concept_data['description'])}")
+        if isinstance(concept_data['description'], dict):
+            print(f"Description languages: {list(concept_data['description'].keys())}")
+            print(f"Description DE: {concept_data['description'].get('de', 'N/A')[:100] if concept_data['description'].get('de') else 'N/A'}")
+        else:
+            print(f"Description (string): {str(concept_data['description'])[:100]}")
         
     try:
         # Save original values
@@ -3521,12 +3712,39 @@ def link_node_to_i14y_concept():
         node.is_linked_to_concept = True
         node.i14y_data = concept_data
         
-        # Update title and description if available from concept
-        if concept_data.get('title'):
-            node.title = concept_data['title']
+        # Extract multilingual descriptions from concept data and update data element
+        # The concept_data comes directly from the frontend, not nested under 'data' key
+        # Check if description exists and has content
+        has_existing_description = False
+        if node.description:
+            if isinstance(node.description, dict):
+                # Check if any language has non-empty content
+                has_existing_description = any(node.description.get(lang, '').strip() 
+                                              for lang in ['de', 'fr', 'it', 'en'])
+            elif isinstance(node.description, str):
+                has_existing_description = bool(node.description.strip())
+        
+        # Only update description if the data element doesn't have a meaningful one
+        if not has_existing_description:
+            desc_obj = concept_data.get('description')
             
-        if concept_data.get('description'):
-            node.description = concept_data['description']
+            if desc_obj:
+                if isinstance(desc_obj, dict):
+                    # Store the full multilingual description object
+                    multilingual_descriptions = {
+                        lang: desc for lang, desc in desc_obj.items()
+                        if lang in ['de', 'en', 'fr', 'it', 'rm'] and desc
+                    }
+                    # Ensure we have at least a German description as fallback
+                    if multilingual_descriptions:
+                        node.description = multilingual_descriptions
+                        print(f"Updated data element description with multilingual content: {list(multilingual_descriptions.keys())}")
+                    else:
+                        node.description = {'de': ''}
+                elif isinstance(desc_obj, str) and desc_obj.strip():
+                    # Handle string descriptions
+                    node.description = {'de': desc_obj}
+                    print(f"Updated data element description with string content")
             
         return jsonify({"success": True})
     except Exception as e:
@@ -3545,6 +3763,10 @@ def link_data_element_to_concept(data_element_id):
     data_element = editor.nodes[data_element_id]
     if data_element.type != 'data_element':
         return jsonify({"error": "Node is not a data element"}), 400
+    
+    # Check if already linked to a concept
+    if data_element.is_linked_to_concept:
+        return jsonify({"error": "This data element is already linked to a concept. Please detach the existing concept first."}), 400
     
     concept_data = data.get('concept_data')
     if not concept_data:
@@ -3597,10 +3819,17 @@ def unlink_data_element_from_concept(data_element_id):
     if data_element.type != 'data_element':
         return jsonify({"error": "Node is not a data element"}), 400
     
+    print(f"Unlinking data element {data_element_id} from concept")
+    print(f"Before unlink - is_linked_to_concept: {data_element.is_linked_to_concept}")
+    print(f"Before unlink - conforms_to_concept_uri: {data_element.conforms_to_concept_uri}")
+    
     # Clear concept link
     data_element.conforms_to_concept_uri = None
     data_element.is_linked_to_concept = False
     data_element.i14y_data = None
+    
+    print(f"After unlink - is_linked_to_concept: {data_element.is_linked_to_concept}")
+    print(f"After unlink - conforms_to_concept_uri: {data_element.conforms_to_concept_uri}")
     
     return jsonify({"success": True})
 
@@ -4182,6 +4411,8 @@ def load_project():
         editor.edges.clear()
         
         # Check if this is the legacy format (with "concepts" instead of "nodes")
+        edges_loaded_from_file = False  # Track if edges were loaded from file
+        
         if "concepts" in project_data and "nodes" not in project_data:
             print("Detected legacy project format - converting concepts to nodes")
             # Convert legacy format to current format
@@ -4255,22 +4486,27 @@ def load_project():
                 edge_count = len(edges_data)
                 print(f"Loading {edge_count} edges from project data")
                 editor.edges = edges_data
+                edges_loaded_from_file = True
             else:
                 print("No edges found in project data - will generate from node connections")
         
-        # Generate edges from node connections for backward compatibility
-        conn_edges_added = 0
-        for node_id, node in editor.nodes.items():
-            for conn_id in node.connections:
-                if conn_id in editor.nodes:
-                    edge_id = f"{node_id}-{conn_id}"
-                    # Only add if not already in edges
-                    if edge_id not in editor.edges:
-                        editor.create_edge(node_id, conn_id, '1..1')
-                        conn_edges_added += 1
-        
-        if conn_edges_added > 0:
-            print(f"Created {conn_edges_added} additional edges from node connections")
+        # Generate edges from node connections ONLY for backward compatibility
+        # (when edges were not saved in the project file)
+        if not edges_loaded_from_file:
+            conn_edges_added = 0
+            for node_id, node in editor.nodes.items():
+                for conn_id in node.connections:
+                    if conn_id in editor.nodes:
+                        edge_id = f"{node_id}-{conn_id}"
+                        # Only add if not already in edges
+                        if edge_id not in editor.edges:
+                            editor.create_edge(node_id, conn_id, '1..1')
+                            conn_edges_added += 1
+            
+            if conn_edges_added > 0:
+                print(f"Created {conn_edges_added} edges from node connections (backward compatibility)")
+        else:
+            print(f"Skipped edge generation from node connections - edges already loaded from file")
         
         total_nodes = len(editor.nodes)
         total_edges = len(editor.edges)
@@ -4456,25 +4692,29 @@ def link_i14y_dataset():
         # Update the dataset node with I14Y information
         if 'title' in dataset_data:
             if isinstance(dataset_data['title'], dict):
-                # Handle multilingual titles
-                title = (dataset_data['title'].get('de') or 
-                         dataset_data['title'].get('en') or 
-                         dataset_data['title'].get('fr') or 
-                         dataset_data['title'].get('it') or 
-                         'Unknown Dataset')
-                dataset_node.title = title
+                # Handle multilingual titles - store the full multilingual object
+                multilingual_titles = {
+                    lang: desc for lang, desc in dataset_data['title'].items() 
+                    if lang in ['de', 'en', 'fr', 'it', 'rm'] and desc
+                }
+                # Ensure we have at least a German title as fallback
+                if not multilingual_titles:
+                    multilingual_titles = {'de': 'Unknown Dataset'}
+                dataset_node.title = multilingual_titles
             else:
                 dataset_node.title = dataset_data.get('title', '')
                 
         if 'description' in dataset_data:
             if isinstance(dataset_data['description'], dict):
-                # Handle multilingual descriptions
-                description = (dataset_data['description'].get('de') or 
-                              dataset_data['description'].get('en') or 
-                              dataset_data['description'].get('fr') or 
-                              dataset_data['description'].get('it') or 
-                              '')
-                dataset_node.description = description
+                # Handle multilingual descriptions - store the full multilingual object
+                multilingual_descriptions = {
+                    lang: desc for lang, desc in dataset_data['description'].items() 
+                    if lang in ['de', 'en', 'fr', 'it', 'rm'] and desc
+                }
+                # Ensure we have at least a German description as fallback
+                if not multilingual_descriptions:
+                    multilingual_descriptions = {'de': ''}
+                dataset_node.description = multilingual_descriptions
             else:
                 dataset_node.description = dataset_data.get('description', '')
         
@@ -4630,15 +4870,26 @@ def export_ttl():
                 if hasattr(dataset_node, 'identifier') and dataset_node.identifier and dataset_node.identifier.strip():
                     filename = dataset_node.identifier.strip() + '.ttl'
                 # Fall back to dataset title if no identifier
-                elif hasattr(dataset_node, 'title') and dataset_node.title and dataset_node.title.strip():
+                elif hasattr(dataset_node, 'title') and dataset_node.title:
                     # Sanitize title for use as filename
-                    sanitized_title = dataset_node.title.strip()
-                    # Replace invalid filename characters
-                    import re
-                    sanitized_title = re.sub(r'[^a-zA-Z0-9\-_]', '_', sanitized_title)
-                    sanitized_title = re.sub(r'_+', '_', sanitized_title)
-                    sanitized_title = sanitized_title.strip('_')
-                    filename = sanitized_title + '.ttl'
+                    # Handle multilingual title
+                    if isinstance(dataset_node.title, dict):
+                        title_text = (dataset_node.title.get('de') or 
+                                     dataset_node.title.get('en') or 
+                                     dataset_node.title.get('fr') or 
+                                     dataset_node.title.get('it') or 
+                                     next(iter(dataset_node.title.values()), ""))
+                    else:
+                        title_text = str(dataset_node.title)
+                    
+                    if title_text and title_text.strip():
+                        sanitized_title = title_text.strip()
+                        # Replace invalid filename characters
+                        import re
+                        sanitized_title = re.sub(r'[^a-zA-Z0-9\-_]', '_', sanitized_title)
+                        sanitized_title = re.sub(r'_+', '_', sanitized_title)
+                        sanitized_title = sanitized_title.strip('_')
+                        filename = sanitized_title + '.ttl'
             
             # Default fallback
             if not filename:
