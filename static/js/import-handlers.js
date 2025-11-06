@@ -216,7 +216,7 @@ function updateDatasetInfo() {
 
 // Update data element information
 function updateDataElementInfo() {
-    if (!selectedNodeId) {
+    if (!window.selectedNodeId) {
         alert('No data element selected');
         return;
     }
@@ -236,7 +236,7 @@ function updateDataElementInfo() {
         return;
     }
 
-    fetch(`/api/data-elements/${selectedNodeId}`, {
+    fetch(`/api/data-elements/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -270,7 +270,7 @@ function updateDataElementInfo() {
 
 // Update node information (for class and concept nodes)
 function updateNodeInfo() {
-    if (!selectedNodeId) {
+    if (!window.selectedNodeId) {
         alert('No node selected');
         return;
     }
@@ -300,7 +300,7 @@ function updateNodeInfo() {
         return;
     }
 
-    fetch(`/api/nodes/${selectedNodeId}`, {
+    fetch(`/api/nodes/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -333,7 +333,7 @@ function updateNodeInfo() {
 
 // Unlink data element from I14Y concept
 function unlinkDataElementFromConcept() {
-    if (!selectedNodeId) {
+    if (!window.selectedNodeId) {
         alert('No data element selected');
         return;
     }
@@ -342,7 +342,7 @@ function unlinkDataElementFromConcept() {
         return;
     }
 
-    fetch(`/api/data-elements/${selectedNodeId}/unlink-concept`, {
+    fetch(`/api/data-elements/${window.selectedNodeId}/unlink-concept`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
@@ -359,7 +359,7 @@ function unlinkDataElementFromConcept() {
             
             // Reload the graph and node details
             loadGraphWithD3();
-            loadNodeDetails(selectedNodeId);
+            loadNodeDetails(window.selectedNodeId);
         } else {
             alert('Error unlinking data element: ' + (data.error || 'Unknown error'));
         }
@@ -405,7 +405,7 @@ function disconnectI14YDataset() {
 
 // Disconnect I14Y concept
 function disconnectI14YConcept() {
-    if (!selectedNodeId) {
+    if (!window.selectedNodeId) {
         alert('No concept selected');
         return;
     }
@@ -414,7 +414,7 @@ function disconnectI14YConcept() {
         return;
     }
 
-    fetch(`/api/nodes/${selectedNodeId}/disconnect-i14y`, {
+    fetch(`/api/nodes/${window.selectedNodeId}/disconnect-i14y`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
@@ -431,7 +431,7 @@ function disconnectI14YConcept() {
             
             // Reload the graph and node details
             loadGraphWithD3();
-            loadNodeDetails(selectedNodeId);
+            loadNodeDetails(window.selectedNodeId);
         } else {
             alert('Error disconnecting concept: ' + (data.error || 'Unknown error'));
         }
@@ -444,7 +444,7 @@ function disconnectI14YConcept() {
 
 // Apply SHACL constraints to selected node
 function applyConstraints() {
-    if (!selectedNodeId) {
+    if (!window.selectedNodeId) {
         alert('No node selected');
         return;
     }
@@ -469,7 +469,7 @@ function applyConstraints() {
     if (range) constraints.range = range;
     if (datatype) constraints.datatype = datatype;
 
-    fetch(`/api/nodes/${selectedNodeId}`, {
+    fetch(`/api/nodes/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(constraints)
@@ -497,6 +497,43 @@ function applyConstraints() {
     });
 }
 
+// Convert class to dataset
+function confirmConvertToDataset() {
+    if (!window.selectedNodeId) {
+        alert('No node selected');
+        return;
+    }
+    
+    if (!confirm('Are you sure you want to convert this class to a dataset? This will remove all incoming connections to this node.')) {
+        return;
+    }
+    
+    fetch(`/api/nodes/${window.selectedNodeId}/convert-to-dataset`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Class converted to dataset.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload the graph to show updated information
+            loadGraphWithD3();
+        } else {
+            alert('Error converting class to dataset: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error converting class to dataset: ' + error.message);
+        console.error('Error converting class to dataset:', error);
+    });
+}
+
 // Export all functions to global scope
 window.updateDatasetInfo = updateDatasetInfo;
 window.updateDataElementInfo = updateDataElementInfo;
@@ -505,3 +542,4 @@ window.applyConstraints = applyConstraints;
 window.unlinkDataElementFromConcept = unlinkDataElementFromConcept;
 window.disconnectI14YDataset = disconnectI14YDataset;
 window.disconnectI14YConcept = disconnectI14YConcept;
+window.confirmConvertToDataset = confirmConvertToDataset;

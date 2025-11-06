@@ -658,6 +658,7 @@
         // Define global handlers that network-d3.js will call
         window.selectNode = function(nodeId) {
             selectedNodeId = nodeId;
+            window.selectedNodeId = selectedNodeId;  // Update global reference
             loadNodeDetails(nodeId);
             document.getElementById('selected-node-section').style.display = 'block';
             document.getElementById('selected-edge-section').style.display = 'none';
@@ -773,6 +774,7 @@
 
         function clearNodeSelection() {
             selectedNodeId = null;
+            window.selectedNodeId = selectedNodeId;  // Update global reference
             selectedEdgeId = null;
             document.getElementById('selected-node-section').style.display = 'none';
             document.getElementById('selected-edge-section').style.display = 'none';
@@ -800,6 +802,7 @@
 
         function selectEdge(edgeId) {
             selectedNodeId = null;  // Clear node selection
+            window.selectedNodeId = selectedNodeId;  // Update global reference
             selectedEdgeId = edgeId;
             
             // Hide node-related UI
@@ -1293,6 +1296,7 @@
         window.selectNode = selectNode;
         window.selectEdge = selectEdge;
         window.clearNodeSelection = clearNodeSelection;
+        window.selectedNodeId = selectedNodeId;
         
         // Other application functions (add, remove, etc.) remain the same
         // ...
