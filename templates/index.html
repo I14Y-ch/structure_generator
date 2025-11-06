@@ -189,6 +189,19 @@
                         </div>
                     </div>
 
+                    <!-- Order Field (for data elements) -->
+                    <div class="card mb-3" id="order-section" style="display: none;">
+                        <div class="card-header">
+                            <h6 class="mb-0">Display Order</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-2">Set the order for this data element in the TTL export. Lower numbers appear first.</p>
+                            <label class="form-label small">Order:</label>
+                            <input type="number" class="form-control form-control-sm mb-2" id="element-order" placeholder="e.g., 1, 2, 3..." min="0">
+                            <button class="btn btn-outline-dark btn-sm w-100" onclick="applyOrder()">Apply Order</button>
+                        </div>
+                    </div>
+
                     <!-- SHACL Constraints -->
                     <div class="card mb-3" id="constraints-section">
                         <div class="card-header">
@@ -1185,6 +1198,23 @@
                         }
                     }
                     document.getElementById('selected-node-info').innerHTML = mainInfo;
+
+                    // Show or hide order section for data elements
+                    const orderSection = document.getElementById('order-section');
+                    const orderInput = document.getElementById('element-order');
+                    if (node.type === 'data_element') {
+                        if (orderSection) {
+                            orderSection.style.display = 'block';
+                        }
+                        if (orderInput) {
+                            const orderValue = node.order !== null && node.order !== undefined ? node.order : '';
+                            console.log('Setting order field value:', orderValue, 'from node.order:', node.order);
+                            orderInput.value = orderValue;
+                        }
+                    } else {
+                        if (orderSection) orderSection.style.display = 'none';
+                        if (orderInput) orderInput.value = '';
+                    }
 
                     // Show or hide constraints section based on node type
                     const constraintsSection = document.getElementById('constraints-section');

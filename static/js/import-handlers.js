@@ -497,6 +497,54 @@ function applyConstraints() {
     });
 }
 
+// Apply order to data element
+function applyOrder() {
+    if (!window.selectedNodeId) {
+        alert('No node selected');
+        return;
+    }
+
+    const orderValue = document.getElementById('element-order').value;
+    console.log('Applying order - raw value:', orderValue);
+    
+    // Prepare data - order can be null/empty or a number
+    const orderData = {
+        order: orderValue && orderValue.trim() !== '' ? parseInt(orderValue) : null
+    };
+    
+    console.log('Sending order data:', orderData);
+
+    fetch(`/api/nodes/${window.selectedNodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Order update response:', data);
+        if (data.success) {
+            // Show success message
+            const status = document.getElementById('selection-status');
+            if (status) {
+                status.style.display = 'block';
+                status.innerHTML = '<small><strong>Success:</strong> Order updated.</small>';
+                setTimeout(() => { status.style.display = 'none'; }, 3000);
+            }
+            
+            // Reload node details to reflect the change (keep selection)
+            loadNodeDetails(window.selectedNodeId);
+            // Also reload graph to update visualization
+            loadGraphWithD3();
+        } else {
+            alert('Error updating order: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        alert('Error updating order: ' + error.message);
+        console.error('Error updating order:', error);
+    });
+}
+
 // Convert class to dataset
 function confirmConvertToDataset() {
     if (!window.selectedNodeId) {
@@ -539,6 +587,7 @@ window.updateDatasetInfo = updateDatasetInfo;
 window.updateDataElementInfo = updateDataElementInfo;
 window.updateNodeInfo = updateNodeInfo;
 window.applyConstraints = applyConstraints;
+window.applyOrder = applyOrder;
 window.unlinkDataElementFromConcept = unlinkDataElementFromConcept;
 window.disconnectI14YDataset = disconnectI14YDataset;
 window.disconnectI14YConcept = disconnectI14YConcept;

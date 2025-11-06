@@ -614,6 +614,7 @@ class SHACLNode:
         self.node_reference = None  # sh:node class reference
         self.xone_groups = []  # sh:xone exclusive groups
         self.range = None  # rdfs:range
+        self.order = None  # sh:order for sorting in TTL export
     
     def create_data_element_from_concept(self, concept_node, local_name: str = None):
         """Create a data element from this concept node
@@ -900,6 +901,7 @@ class SHACLNode:
             'node_reference': self.node_reference,
             'xone_groups': self.xone_groups,
             'range': self.range,
+            'order': self.order,
             # Visualization properties
             'position': self.position
         }
@@ -926,6 +928,7 @@ class SHACLNode:
         node.node_reference = data.get('node_reference')
         node.xone_groups = data.get('xone_groups', [])
         node.range = data.get('range')
+        node.order = data.get('order')
         # Visualization properties
         node.position = data.get('position', {'x': 0.5, 'y': 0.5})
         return node
@@ -1313,7 +1316,13 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             class_property_uris.append(property_uri)
 
         # Create property shapes for data elements belonging to this class
-        for data_element in class_data_elements:
+        # Sort data elements by order field (if set), then by title
+        class_data_elements_sorted = sorted(
+            class_data_elements,
+            key=lambda de: (de.order if de.order is not None else float('inf'), de.title)
+        )
+        
+        for data_element in class_data_elements_sorted:
             element_id = norm_id(data_element.local_name or data_element.title)
             # Use the full I14Y URI pattern 
             property_uri = URIRef(f"{i14y_ns}{element_id}/{element_id}")
@@ -1400,6 +1409,10 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             # Add class reference (sh:node)
             if data_element.node_reference:
                 g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
+
+            # Add order property (sh:order) for sorting
+            if data_element.order is not None:
+                g.add((property_uri, SH.order, Literal(data_element.order)))
 
             # Add multilingual titles and descriptions using local_name and description
             element_title = data_element.title  # Use the custom title
@@ -1512,7 +1525,14 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
-    for data_element in connected_data_elements:
+    
+    # Sort data elements by order field (if set), then by title
+    connected_data_elements_sorted = sorted(
+        connected_data_elements,
+        key=lambda de: (de.order if de.order is not None else float('inf'), de.title)
+    )
+    
+    for data_element in connected_data_elements_sorted:
         element_id = norm_id(data_element.local_name or data_element.title)
         # Use the full I14Y URI pattern with dataset_id path
         property_uri = URIRef(f"{i14y_ns}{dataset_id}/{element_id}")
@@ -1599,6 +1619,10 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         # Add class reference (sh:node)
         if data_element.node_reference:
             g.add((property_uri, SH.node, URIRef(data_element.node_reference)))
+
+        # Add order property (sh:order) for sorting
+        if data_element.order is not None:
+            g.add((property_uri, SH.order, Literal(data_element.order)))
 
         # Add multilingual titles and descriptions for data elements
         element_titles = data_element.get_multilingual_title()
@@ -2886,6 +2910,12 @@ class FlaskSHACLGraphEditor:
             node.range = node_data['range'] if node_data['range'] else None
         if 'local_name' in node_data:
             node.local_name = node_data['local_name'] if node_data['local_name'] else None
+        if 'order' in node_data:
+            # Convert to int if it's a valid number, otherwise set to None
+            try:
+                node.order = int(node_data['order']) if node_data['order'] not in [None, ''] else None
+            except (ValueError, TypeError):
+                node.order = None
             
         return {"success": True, "node": node.to_dict()}
     
@@ -3910,6 +3940,7 @@ def get_node(node_id):
         return jsonify({"error": "Node not found"}), 404
     
     node = editor.nodes[node_id]
+    print(f"GET NODE {node_id}: Returning node with order={node.order}")
     return jsonify({
         'id': node.id,
         'type': node.type,
@@ -3930,7 +3961,8 @@ def get_node(node_id):
         'in_values': node.in_values,
         'node_reference': node.node_reference,
         'range': node.range,
-        'datatype': node.datatype
+        'datatype': node.datatype,
+        'order': node.order
     })
 
 @app.route('/api/nodes/<node_id>/constraints', methods=['POST'])
@@ -4108,8 +4140,13 @@ def update_node(node_id):
     """Update a node"""
     editor = get_user_editor()
     node_data = request.json
+    print(f"UPDATE NODE {node_id}: Received data: {node_data}")
     result = editor.update_node(node_id, node_data)
+    print(f"UPDATE NODE {node_id}: Result: {result}")
     if result:
+        # Log the updated node's order field specifically
+        if node_id in editor.nodes:
+            print(f"UPDATE NODE {node_id}: Node order after update: {editor.nodes[node_id].order}")
         return jsonify(result)
     return jsonify({"error": "Node not found"}), 404
 
@@ -5862,6 +5899,47 @@ def convert_to_dataset(node_id):
         user_editor.edges.pop(edge_id)
     
     return jsonify({"success": True, "node": node.to_dict()})
+
+@app.route('/api/nodes/update-order', methods=['POST'])
+def update_nodes_order():
+    """Update the order field for multiple data elements at once"""
+    user_editor = get_user_editor()
+    data = request.json
+    
+    if not data or 'orders' not in data:
+        return jsonify({"error": "Missing 'orders' in request body"}), 400
+    
+    orders = data['orders']  # Expected format: [{"node_id": "...", "order": 0}, ...]
+    
+    updated_count = 0
+    errors = []
+    
+    for item in orders:
+        node_id = item.get('node_id')
+        order = item.get('order')
+        
+        if not node_id:
+            errors.append({"error": "Missing node_id", "item": item})
+            continue
+        
+        if node_id not in user_editor.nodes:
+            errors.append({"error": f"Node {node_id} not found", "item": item})
+            continue
+        
+        node = user_editor.nodes[node_id]
+        
+        # Set the order (convert to int or None)
+        try:
+            node.order = int(order) if order not in [None, ''] else None
+            updated_count += 1
+        except (ValueError, TypeError):
+            errors.append({"error": f"Invalid order value for node {node_id}", "item": item})
+    
+    return jsonify({
+        "success": True,
+        "updated_count": updated_count,
+        "errors": errors if errors else None
+    })
 
 if __name__ == '__main__':
     import os
