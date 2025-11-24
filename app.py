@@ -4366,7 +4366,11 @@ def load_graph():
     if not filename:
         return jsonify({"error": "Filename is required"}), 400
         
-    filepath = os.path.join('data', filename)
+    # Prevent path traversal: normalize and check that path stays in 'data'
+    base_dir = os.path.abspath('data')
+    filepath = os.path.normpath(os.path.join(base_dir, filename))
+    if not filepath.startswith(base_dir + os.sep):
+        return jsonify({"error": "Invalid filename"}), 400
     
     if not os.path.exists(filepath):
         return jsonify({"error": "File not found"}), 404
