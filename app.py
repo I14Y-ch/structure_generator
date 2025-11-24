@@ -5861,7 +5861,7 @@ def import_xsd():
         import traceback
         print(f"Error importing XSD: {str(e)}")
         print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "An internal error occurred."}), 500
 
 @app.route('/api/nodes/<node_id>/convert-to-dataset', methods=['POST'])
 def convert_to_dataset(node_id):
