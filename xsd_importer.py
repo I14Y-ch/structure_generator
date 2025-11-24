@@ -18,7 +18,8 @@ DCT = Namespace("http://purl.org/dc/terms/")
 def parse_xsd_content(xsd_content):
     """Parse XSD content string and return the root element."""
     try:
-        root = etree.fromstring(xsd_content.encode('utf-8'))
+        parser = etree.XMLParser(resolve_entities=False)
+        root = etree.fromstring(xsd_content.encode('utf-8'), parser=parser)
         return root
     except Exception as e:
         print(f"Error parsing XSD content: {e}")
