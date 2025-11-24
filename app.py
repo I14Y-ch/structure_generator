@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, session
+from werkzeug.utils import secure_filename
 import json
 import os
 import tempfile
@@ -4345,16 +4346,21 @@ def save_graph():
     """Save the graph to a file"""
     editor = get_user_editor()
     filename = request.json.get('filename', f"shacl_graph_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-    
+    # Sanitize filename
+    safe_filename = secure_filename(filename)
     # Ensure the data directory exists
     os.makedirs('data', exist_ok=True)
     
-    # Save to the data directory
-    filepath = os.path.join('data', filename)
+    # Build and normalize the path
+    data_dir = os.path.abspath('data')
+    filepath = os.path.normpath(os.path.join(data_dir, safe_filename))
+    # Ensure the file is within the data directory
+    if not filepath.startswith(data_dir + os.sep):
+        return jsonify({"error": "Invalid filename/path"}), 400
     success = editor.save_to_file(filepath)
     
     if success:
-        return jsonify({"success": True, "filename": filename})
+        return jsonify({"success": True, "filename": safe_filename})
     return jsonify({"error": "Failed to save graph"}), 500
 
 @app.route('/api/load', methods=['POST'])
