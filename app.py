@@ -91,7 +91,7 @@ class I14YAPIClient:
     """Client for interacting with I14Y API"""
     
     def __init__(self):
-        self.base_url = "https://input.i14y.admin.ch/api/Catalog"
+        self.base_url = "https://core.i14y.c.bfs.admin.ch/api/Catalog"
         
     def search_concepts(self, query='', page=1, page_size=20):
         """Search for concepts using the I14Y API
