@@ -75,7 +75,10 @@ let selectedConceptForDataElement = null;
 // Show Add Data Element Modal
 function showAddDataElementModal() {
     // Clear previous state
-    document.getElementById('data-element-title').value = '';
+    document.getElementById('data-element-title-de').value = '';
+    document.getElementById('data-element-title-fr').value = '';
+    document.getElementById('data-element-title-it').value = '';
+    document.getElementById('data-element-title-en').value = '';
     document.getElementById('data-element-description').value = '';
     document.getElementById('data-element-concept-search').value = '';
     document.getElementById('data-element-concept-results').style.display = 'none';
@@ -166,13 +169,27 @@ function clearSelectedConcept() {
 
 // Add Data Element from Modal
 function addDataElement() {
-    const title = document.getElementById('data-element-title').value;
+    const titleDe = document.getElementById('data-element-title-de').value;
+    const titleFr = document.getElementById('data-element-title-fr').value;
+    const titleIt = document.getElementById('data-element-title-it').value;
+    const titleEn = document.getElementById('data-element-title-en').value;
     const description = document.getElementById('data-element-description').value;
 
-    if (!title) {
-        alert('Local name is required');
+    if (!titleDe && !titleFr && !titleIt && !titleEn) {
+        alert('At least one title is required');
         return;
     }
+
+    // Build multilingual title object
+    const title = {
+        de: titleDe,
+        fr: titleFr,
+        it: titleIt,
+        en: titleEn
+    };
+    
+    // Use the first available title as local_name (prioritize German, then English, then others)
+    const local_name = titleDe || titleEn || titleFr || titleIt;
 
     // Determine if a class is selected as parent
     let parentId = null;
@@ -186,8 +203,8 @@ function addDataElement() {
         const payload = {
             type: 'data_element',
             title: title,
+            local_name: local_name,
             description: description,
-            local_name: title,
             parent_id: parentId
         };
 
@@ -221,8 +238,8 @@ function addDataElement() {
         const payload = {
             type: 'data_element',
             title: title,
-            description: description,
-            local_name: title
+            local_name: local_name,
+            description: description
         };
 
         // If a concept is selected, include it
@@ -554,23 +571,29 @@ function selectI14YLinkResult(index) {
     const result = lastLinkI14YSearchResults[index];
     if (!result) return;
     
-    // Get the currently selected node
-    const selectedNodeIds = Array.from(selectedNodes);
-    if (selectedNodeIds.length !== 1) {
+    // Get the currently selected node - support both network view (selectedNodes) and tree view (selectedNodeId)
+    let nodeId = null;
+    
+    if (window.selectedNodeId) {
+        // Tree view or single selection mode
+        nodeId = window.selectedNodeId;
+    } else if (selectedNodes && selectedNodes.size === 1) {
+        // Network view with Set-based selection
+        const selectedNodeIds = Array.from(selectedNodes);
+        nodeId = selectedNodeIds[0];
+        
+        // Extract ID if it's an object with an id property
+        if (typeof nodeId === 'object' && nodeId !== null && 'id' in nodeId) {
+            nodeId = nodeId.id;
+        }
+    }
+    
+    if (!nodeId) {
         alert('Please select exactly one data element to link');
         return;
     }
     
-    // Make sure we're getting just the node ID string, not the full node object
-    let nodeId = selectedNodeIds[0];
-    console.log('Raw selected node ID for linking:', nodeId, typeof nodeId);
-    
-    // Extract ID if it's an object with an id property
-    if (typeof nodeId === 'object' && nodeId !== null && 'id' in nodeId) {
-        nodeId = nodeId.id;
-    }
-    
-    console.log('Processed node ID for linking:', nodeId, typeof nodeId);
+    console.log('Node ID for linking:', nodeId, typeof nodeId);
     
     // Extract or construct URI
     const uri = result.uri || 
@@ -1344,27 +1367,30 @@ function selectI14YDatasetResult(index) {
                result.id && `https://www.i14y.admin.ch/de/catalog/datasets/${result.id}/description` || 
                '#';
                
-    // Prepare title for display
-    let title = 'Unnamed Dataset';
-    if (typeof result.title === 'object') {
-        title = result.title.en || result.title.de || result.title.fr || 
-                result.title.it || Object.values(result.title)[0] || title;
+    // Prepare title - keep multilingual object if available
+    let title;
+    if (typeof result.title === 'object' && result.title !== null) {
+        // Keep the full multilingual object
+        title = result.title;
     } else if (typeof result.title === 'string') {
         title = result.title;
     } else if (result.identifiers && result.identifiers.length > 0) {
         title = result.identifiers[0].notation;
     } else if (result.identifier) {
         title = result.identifier;
+    } else {
+        title = 'Unnamed Dataset';
     }
     
-    // Prepare description for display
-    let description = '';
-    if (typeof result.description === 'object') {
-        description = result.description.en || result.description.de || 
-                     result.description.fr || result.description.it || 
-                     Object.values(result.description)[0] || '';
+    // Prepare description - keep multilingual object if available
+    let description;
+    if (typeof result.description === 'object' && result.description !== null) {
+        // Keep the full multilingual object
+        description = result.description;
     } else if (typeof result.description === 'string') {
         description = result.description;
+    } else {
+        description = '';
     }
     
     // Extract publisher information
@@ -1443,7 +1469,8 @@ function selectI14YDatasetResult(index) {
         title: title,
         description: description,
         type: result.type || 'Dataset',
-        publisher: publisher
+        publisher: publisher,
+        identifiers: result.identifiers || []  // Include identifiers array for backend
     };
     
     // Send the link request to the server
@@ -1499,18 +1526,28 @@ function updateDataElementInfo() {
     }
 
     // Collect form data
-    const localName = document.getElementById('edit-data-element-local-name').value.trim();
+    const titleDe = document.getElementById('edit-data-element-title-de').value.trim();
+    const titleFr = document.getElementById('edit-data-element-title-fr').value.trim();
+    const titleIt = document.getElementById('edit-data-element-title-it').value.trim();
+    const titleEn = document.getElementById('edit-data-element-title-en').value.trim();
     const descriptionDe = document.getElementById('edit-data-element-description-de').value.trim();
     const descriptionFr = document.getElementById('edit-data-element-description-fr').value.trim();
     const descriptionIt = document.getElementById('edit-data-element-description-it').value.trim();
     const descriptionEn = document.getElementById('edit-data-element-description-en').value.trim();
 
-    if (!localName) {
-        alert('Local name is required');
+    if (!titleDe && !titleFr && !titleIt && !titleEn) {
+        alert('At least one title is required');
         return;
     }
 
-    // Prepare multilingual description object
+    // Prepare multilingual title and description objects
+    const title = {
+        de: titleDe,
+        fr: titleFr,
+        it: titleIt,
+        en: titleEn
+    };
+    
     const description = {};
     if (descriptionDe) description.de = descriptionDe;
     if (descriptionFr) description.fr = descriptionFr;
@@ -1519,7 +1556,7 @@ function updateDataElementInfo() {
 
     // Prepare update data
     const updateData = {
-        local_name: localName,
+        title: title,
         description: description
     };
 

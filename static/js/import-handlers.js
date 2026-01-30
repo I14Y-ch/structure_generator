@@ -176,6 +176,9 @@ function updateDatasetInfo() {
         en: document.getElementById('edit-dataset-description-en').value.trim()
     };
 
+    // Collect identifier
+    const identifier = document.getElementById('edit-dataset-identifier').value.trim();
+
     // Check if at least one title is provided
     const hasTitle = Object.values(title).some(t => t.length > 0);
     if (!hasTitle) {
@@ -188,7 +191,8 @@ function updateDatasetInfo() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             title: title,
-            description: description
+            description: description,
+            identifier: identifier
         })
     })
     .then(response => response.json())
@@ -231,6 +235,9 @@ function updateDataElementInfo() {
         en: document.getElementById('edit-data-element-description-en').value.trim()
     };
 
+    // Collect identifier
+    const identifier = document.getElementById('edit-data-element-identifier').value.trim();
+
     if (!localName) {
         alert('Local name is required');
         return;
@@ -242,7 +249,8 @@ function updateDataElementInfo() {
         body: JSON.stringify({
             title: localName,
             local_name: localName,
-            description: description
+            description: description,
+            identifier: identifier
         })
     })
     .then(response => response.json())

@@ -71,6 +71,19 @@
         .form-check-label {
             cursor: pointer;
         }
+        
+        /* Identifier validation styling */
+        .is-invalid {
+            border-color: #dc3545 !important;
+            box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+        }
+        
+        .invalid-feedback {
+            display: block;
+            color: #dc3545;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
     </style>
 </head>
 <body>
@@ -170,6 +183,21 @@
             <!-- Main Graph Area -->
             <div class="col-md-7">
                 <div class="main-content">
+                    <!-- Visualization Type Switcher -->
+                    <div class="mb-2 d-flex align-items-center justify-content-between" style="padding: 8px; background: #f8f9fa; border-radius: 4px;">
+                        <div class="d-flex align-items-center">
+                            <label class="form-label mb-0 me-2 small" style="font-weight: 500;">Visualization:</label>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Visualization type">
+                                <input type="radio" class="btn-check" name="viz-type" id="viz-network" autocomplete="off" checked onchange="switchVisualization('network')">
+                                <label class="btn btn-outline-primary" for="viz-network">Network</label>
+                                
+                                <input type="radio" class="btn-check" name="viz-type" id="viz-tree" autocomplete="off" onchange="switchVisualization('tree')">
+                                <label class="btn btn-outline-primary" for="viz-tree">Tree View</label>
+                            </div>
+                        </div>
+                        <small class="text-muted" id="viz-description">Force-directed network layout</small>
+                    </div>
+                    
                     <div id="graph-container">
                         <!-- Debug info will be added here -->
                         <div id="debug-info" style="position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border: 1px solid #ccc; z-index: 1000; max-width: 400px;"></div>
@@ -319,10 +347,40 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="data-element-title" class="form-label">Local Name:</label>
-                        <input type="text" class="form-control" id="data-element-title" required 
-                               placeholder="Local name for this data element">
-                        <div class="form-text">This is the name used locally in your dataset</div>
+                        <label class="form-label">Title (Multilingual):</label>
+                        <ul class="nav nav-tabs" id="data-element-title-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="data-element-de-tab" data-bs-toggle="tab" data-bs-target="#data-element-de-title" type="button" role="tab" aria-controls="data-element-de-title" aria-selected="true">DE</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-element-fr-tab" data-bs-toggle="tab" data-bs-target="#data-element-fr-title" type="button" role="tab" aria-controls="data-element-fr-title" aria-selected="false">FR</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-element-it-tab" data-bs-toggle="tab" data-bs-target="#data-element-it-title" type="button" role="tab" aria-controls="data-element-it-title" aria-selected="false">IT</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-element-en-tab" data-bs-toggle="tab" data-bs-target="#data-element-en-title" type="button" role="tab" aria-controls="data-element-en-title" aria-selected="false">EN</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="data-element-title-tab-content">
+                            <div class="tab-pane fade show active" id="data-element-de-title" role="tabpanel" aria-labelledby="data-element-de-tab">
+                                <input type="text" class="form-control mt-2" id="data-element-title-de" required 
+                                       placeholder="German title">
+                            </div>
+                            <div class="tab-pane fade" id="data-element-fr-title" role="tabpanel" aria-labelledby="data-element-fr-tab">
+                                <input type="text" class="form-control mt-2" id="data-element-title-fr" 
+                                       placeholder="French title">
+                            </div>
+                            <div class="tab-pane fade" id="data-element-it-title" role="tabpanel" aria-labelledby="data-element-it-tab">
+                                <input type="text" class="form-control mt-2" id="data-element-title-it" 
+                                       placeholder="Italian title">
+                            </div>
+                            <div class="tab-pane fade" id="data-element-en-title" role="tabpanel" aria-labelledby="data-element-en-tab">
+                                <input type="text" class="form-control mt-2" id="data-element-title-en" 
+                                       placeholder="English title">
+                            </div>
+                        </div>
+                        <div class="form-text">The title used for this data element in different languages</div>
                     </div>
                     <div class="mb-3">
                         <label for="data-element-description" class="form-label">Description:</label>
@@ -565,12 +623,63 @@
         // Global variables
         let selectedNodeId = null;
         let selectedEdgeId = null;
+        let currentVisualization = 'network'; // Track current visualization type
         // Variables connectionMode and pendingConnection are already defined in network-d3.js
         // Do not redeclare them here
+        
+        // Make currentVisualization globally accessible
+        window.currentVisualization = currentVisualization;
 
-        // Wrapper function to call the D3 graph loading function
+        // Wrapper function to call the appropriate graph loading function
         function loadGraph() {
-            loadGraphWithD3();
+            if (window.currentVisualization === 'tree') {
+                if (typeof window.loadXmlTree === 'function') {
+                    window.loadXmlTree();
+                }
+            } else {
+                if (typeof window._loadGraphWithD3Original === 'function') {
+                    window._loadGraphWithD3Original();
+                }
+            }
+        }
+        
+        // Make loadGraph globally accessible
+        window.loadGraph = loadGraph;
+        
+        // Switch between visualization types
+        function switchVisualization(vizType) {
+            currentVisualization = vizType;
+            window.currentVisualization = vizType; // Update global reference
+            
+            const vizDescription = document.getElementById('viz-description');
+            
+            if (vizType === 'tree') {
+                // Initialize and switch to XML tree view
+                if (typeof initializeXmlTreeVisualization === 'function') {
+                    initializeXmlTreeVisualization('graph-container');
+                    loadGraph();
+                    vizDescription.textContent = 'Hierarchical tree layout';
+                    
+                    // Override toggleConnectionMode for tree view
+                    window.toggleConnectionMode = window.toggleXmlTreeConnectionMode;
+                } else {
+                    console.error('XML tree visualization not available');
+                }
+            } else {
+                // Switch to network view  
+                if (typeof initializeD3Visualization === 'function') {
+                    initializeD3Visualization('graph-container');
+                    loadGraph();
+                    vizDescription.textContent = 'Force-directed network layout';
+                    
+                    // Restore original network toggleConnectionMode
+                    if (window._networkToggleConnectionMode) {
+                        window.toggleConnectionMode = window._networkToggleConnectionMode;
+                    }
+                } else {
+                    console.error('Network visualization not available');
+                }
+            }
         }
         
         // Test function to display nodes directly without D3.js
@@ -711,6 +820,44 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
+        }
+
+        // Validation function for identifier fields
+        function validateIdentifier(input) {
+            const value = input.value;
+            const pattern = /^[a-zA-Z0-9_-]*$/;
+            
+            if (!pattern.test(value)) {
+                input.setCustomValidity('Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.');
+                input.classList.add('is-invalid');
+            } else {
+                input.setCustomValidity('');
+                input.classList.remove('is-invalid');
+            }
+        }
+
+        // Add validation to identifier fields when they are created
+        function setupIdentifierValidation() {
+            const datasetIdentifierInput = document.getElementById('edit-dataset-identifier');
+            const dataElementIdentifierInput = document.getElementById('edit-data-element-identifier');
+            
+            if (datasetIdentifierInput) {
+                datasetIdentifierInput.addEventListener('input', function() {
+                    validateIdentifier(this);
+                });
+                datasetIdentifierInput.addEventListener('blur', function() {
+                    validateIdentifier(this);
+                });
+            }
+            
+            if (dataElementIdentifierInput) {
+                dataElementIdentifierInput.addEventListener('input', function() {
+                    validateIdentifier(this);
+                });
+                dataElementIdentifierInput.addEventListener('blur', function() {
+                    validateIdentifier(this);
+                });
+            }
         }
 
         // Initialize the application
@@ -967,6 +1114,12 @@
                                 </div>
                                 ${isLinked ? '<small class="text-muted">Description is managed on I14Y</small>' : ''}
                             </div>
+                            <div class="mb-3">
+                                <label for="edit-dataset-identifier" class="form-label small">Identifier:</label>
+                                <input type="text" class="form-control form-control-sm" id="edit-dataset-identifier" value="${escapeHtml(node.identifier || '')}" ${isLinked ? 'readonly' : ''} placeholder="Dataset identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+                                <div class="form-text">Unique identifier for this dataset (letters, numbers, hyphens, underscores only)</div>
+                                ${isLinked ? '<small class="text-muted">Identifier is managed by I14Y</small>' : ''}
+                            </div>
                             ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
                             ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100 mb-2" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
                             ${i14yDatasetInfo}
@@ -1113,9 +1266,36 @@
                             <strong>Type:</strong> Data Element<br><br>
                             ${conceptDetails}
                             <div class="mb-3 mt-3">
-                                <label for="edit-data-element-local-name" class="form-label small">Local Name:</label>
-                                <input type="text" class="form-control form-control-sm" id="edit-data-element-local-name" value="${escapeHtml(node.local_name || node.title)}">
-                                <div class="form-text">Name used in your dataset</div>
+                                <label class="form-label small">Title (Multilingual):</label>
+                                <ul class="nav nav-tabs" id="edit-data-element-title-tabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="edit-data-element-de-title-tab" data-bs-toggle="tab" data-bs-target="#edit-data-element-de-title" type="button" role="tab" aria-controls="edit-data-element-de-title" aria-selected="true">DE</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="edit-data-element-fr-title-tab" data-bs-toggle="tab" data-bs-target="#edit-data-element-fr-title" type="button" role="tab" aria-controls="edit-data-element-fr-title" aria-selected="false">FR</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="edit-data-element-it-title-tab" data-bs-toggle="tab" data-bs-target="#edit-data-element-it-title" type="button" role="tab" aria-controls="edit-data-element-it-title" aria-selected="false">IT</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="edit-data-element-en-title-tab" data-bs-toggle="tab" data-bs-target="#edit-data-element-en-title" type="button" role="tab" aria-controls="edit-data-element-en-title" aria-selected="false">EN</button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="edit-data-element-title-tab-content">
+                                    <div class="tab-pane fade show active" id="edit-data-element-de-title" role="tabpanel" aria-labelledby="edit-data-element-de-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-data-element-title-de" value="${escapeHtml(getLanguageText(node.title, 'de'))}" placeholder="German title">
+                                    </div>
+                                    <div class="tab-pane fade" id="edit-data-element-fr-title" role="tabpanel" aria-labelledby="edit-data-element-fr-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-data-element-title-fr" value="${escapeHtml(getLanguageText(node.title, 'fr'))}" placeholder="French title">
+                                    </div>
+                                    <div class="tab-pane fade" id="edit-data-element-it-title" role="tabpanel" aria-labelledby="edit-data-element-it-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-data-element-title-it" value="${escapeHtml(getLanguageText(node.title, 'it'))}" placeholder="Italian title">
+                                    </div>
+                                    <div class="tab-pane fade" id="edit-data-element-en-title" role="tabpanel" aria-labelledby="edit-data-element-en-title-tab">
+                                        <input type="text" class="form-control form-control-sm mt-2" id="edit-data-element-title-en" value="${escapeHtml(getLanguageText(node.title, 'en'))}" placeholder="English title">
+                                    </div>
+                                </div>
+                                <div class="form-text">Title used for this data element in different languages</div>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label small">Description:</label>
@@ -1147,6 +1327,11 @@
                                         <textarea class="form-control form-control-sm mt-2" id="edit-data-element-description-en" rows="3" placeholder="English description">${escapeHtml(getLanguageText(node.description, 'en'))}</textarea>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="edit-data-element-identifier" class="form-label small">Identifier:</label>
+                                <input type="text" class="form-control form-control-sm" id="edit-data-element-identifier" value="${escapeHtml(node.identifier || '')}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+                                <div class="form-text">Unique identifier for this data element (letters, numbers, hyphens, underscores only)</div>
                             </div>
                             <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDataElementInfo()">Update Data Element</button>
                             ${conceptLinkInfo}
@@ -1198,6 +1383,9 @@
                         }
                     }
                     document.getElementById('selected-node-info').innerHTML = mainInfo;
+
+                    // Setup identifier validation for the newly created input fields
+                    setTimeout(setupIdentifierValidation, 100);
 
                     // Show or hide order section for data elements
                     const orderSection = document.getElementById('order-section');
@@ -1360,7 +1548,7 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    loadGraphWithD3();
+                    loadGraph();
                     loadEdgeDetails(selectedEdgeId);
                 } else {
                     alert('Error updating cardinality');
@@ -1390,6 +1578,9 @@
     
     <!-- D3.js visualization -->
     <script src="/static/js/network-d3.js"></script>
+    
+    <!-- Tree visualization -->
+    <script src="/static/js/xml-tree.js"></script>
     
     <!-- Modal handlers for add class and add data element -->
     <script src="/static/js/modal-handlers.js"></script>

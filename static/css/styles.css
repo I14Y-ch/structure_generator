@@ -131,6 +131,7 @@
 
 .right-sidebar {
     padding: 20px;
+    min-width: 300px;
 }
 
 /* Ensure all columns start at the same height */
@@ -204,4 +205,31 @@
     font-weight: bolder !important;
     fill: #000 !important;
     text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8) !important;
+}
+/* XML Tree Visualization Styles */
+.xml-node {
+    cursor: pointer;
+}
+
+.xml-node:hover rect {
+    filter: brightness(0.95);
+}
+
+.xml-node rect {
+    transition: all 0.2s ease;
+}
+
+.xml-link path {
+    transition: stroke 0.2s ease;
+}
+
+.xml-link:hover path {
+    stroke: #666;
+    stroke-width: 2px;
+}
+
+/* Visualization switcher */
+.btn-check:checked + .btn-outline-primary {
+    background-color: #0d6efd;
+    color: white;
 }

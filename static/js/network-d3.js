@@ -328,12 +328,24 @@ function renderVisualization() {
         .attr('fill', '#222')
         .attr('font-size', '14px')
         .attr('font-weight', 'bold')
-        .text(d => getNodeTitle(d));
+        .each(function(d) {
+            const textElement = d3.select(this);
+            const lines = getWrappedTitle(d);
+            lines.forEach((line, i) => {
+                textElement.append('tspan')
+                    .attr('x', 0)
+                    .attr('dy', i === 0 ? 0 : '1.2em')
+                    .text(line);
+            });
+        });
 
     // Add type labels below the node
     node.append('text')
         .attr('text-anchor', 'middle')
-        .attr('dy', '1.2em')
+        .attr('dy', d => {
+            const lines = getWrappedTitle(d);
+            return (lines.length - 1) * 1.2 + 1.2 + 'em'; // position below the last title line
+        })
         .attr('fill', '#444')
         .attr('font-size', '11px')
         .text(d => d.type);
@@ -373,7 +385,37 @@ function getNodeWidth(d) {
 
 // Helper to get node height
 function getNodeHeight(d) {
-    return 38;
+    const lines = getWrappedTitle(d);
+    return 20 + lines.length * 16; // base 20 + 16 per line
+}
+function getWrappedTitle(d) {
+    let title = getNodeTitle(d);
+    if (title.length <= 50) return [title];
+    
+    // Split into words
+    const words = title.split(' ');
+    const lines = [];
+    let currentLine = '';
+    
+    for (const word of words) {
+        if ((currentLine + ' ' + word).length <= 25) { // approx 25 chars per line
+            currentLine += (currentLine ? ' ' : '') + word;
+        } else {
+            if (currentLine) lines.push(currentLine);
+            currentLine = word;
+            if (lines.length >= 2) { // max 3 lines total
+                break;
+            }
+        }
+    }
+    if (currentLine) lines.push(currentLine);
+    
+    // If still too long, truncate last line
+    if (lines.length > 0 && lines[lines.length - 1].length > 25) {
+        lines[lines.length - 1] = lines[lines.length - 1].substring(0, 22) + '...';
+    }
+    
+    return lines;
 }
     
     // Update positions on simulation tick
@@ -947,10 +989,19 @@ function handleBackgroundClick(event) {
 
 // Export functions for global access
 window.initializeD3Visualization = initializeD3Visualization;
+window._loadGraphWithD3Original = loadGraphWithD3; // Store original for wrapper
 window.loadGraphWithD3 = loadGraphWithD3;
+window._networkToggleConnectionMode = toggleConnectionMode; // Store original for switching visualizations
 window.toggleConnectionMode = toggleConnectionMode;
 window.resetView = resetView;
 window.connectSelectedNodes = connectSelectedNodes;
 window.updateSelectionStatus = updateSelectionStatus;
 
+// Create a smart wrapper that will support multiple visualizations when available
+// This allows external JS files to call loadGraphWithD3() which will work with any active visualization
+setTimeout(() => {
+    if (window.loadGraph && window.currentVisualization !== undefined) {
+        window.loadGraphWithD3 = window.loadGraph;
+    }
+}, 100);
 
