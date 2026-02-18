@@ -616,6 +616,10 @@ class SHACLNode:
         self.xone_groups = []  # sh:xone exclusive groups
         self.range = None  # rdfs:range
         self.order = None  # sh:order for sorting in TTL export
+        self.suggested_pattern = None
+        self.suggested_in_values = None
+        self.suggested_min_length = None
+        self.suggested_max_length = None
     
     def create_data_element_from_concept(self, concept_node, local_name: str = None):
         """Create a data element from this concept node
@@ -903,6 +907,10 @@ class SHACLNode:
             'xone_groups': self.xone_groups,
             'range': self.range,
             'order': self.order,
+            'suggested_pattern': self.suggested_pattern,
+            'suggested_in_values': self.suggested_in_values,
+            'suggested_min_length': self.suggested_min_length,
+            'suggested_max_length': self.suggested_max_length,
             # Visualization properties
             'position': self.position
         }
@@ -930,6 +938,10 @@ class SHACLNode:
         node.xone_groups = data.get('xone_groups', [])
         node.range = data.get('range')
         node.order = data.get('order')
+        node.suggested_pattern = data.get('suggested_pattern')
+        node.suggested_in_values = data.get('suggested_in_values')
+        node.suggested_min_length = data.get('suggested_min_length')
+        node.suggested_max_length = data.get('suggested_max_length')
         # Visualization properties
         node.position = data.get('position', {'x': 0.5, 'y': 0.5})
         return node
@@ -3239,6 +3251,7 @@ def get_graph():
             'title': node.title,
             'description': node.description,
             'type': node_type,
+            'order': node.order if hasattr(node, 'order') else None,
             'i14y_id': node.i14y_id if hasattr(node, 'i14y_id') else None,
             'is_linked_to_concept': node.is_linked_to_concept if hasattr(node, 'is_linked_to_concept') else False
         })
@@ -3965,7 +3978,11 @@ def get_node(node_id):
         'node_reference': node.node_reference,
         'range': node.range,
         'datatype': node.datatype,
-        'order': node.order
+        'order': node.order,
+        'suggested_pattern': node.suggested_pattern,
+        'suggested_in_values': node.suggested_in_values,
+        'suggested_min_length': node.suggested_min_length,
+        'suggested_max_length': node.suggested_max_length
     })
 
 @app.route('/api/nodes/<node_id>/constraints', methods=['POST'])
@@ -5535,6 +5552,7 @@ def import_csv():
             # Use RDFLib to parse the TTL
             g = Graph()
             g.parse(data=ttl, format='turtle')
+            SUG = Namespace("https://www.i14y.admin.ch/vocab#")
             with open('/tmp/csv_import.log', 'a') as f:
                 f.write("TTL parsed successfully\n")
             
@@ -5604,6 +5622,41 @@ def import_csv():
                 # Create a data element node for this property
                 data_element_node = SHACLNode('data_element', title=prop_name)
                 data_element_node.datatype = datatype or "xsd:string"
+
+                for _, _, value in g.triples((shape, SH.order, None)):
+                    try:
+                        data_element_node.order = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                    break
+
+                for _, _, value in g.triples((shape, SUG.suggestedPattern, None)):
+                    data_element_node.suggested_pattern = str(value)
+                    break
+                
+                # Extract suggested enumeration values
+                for _, _, value in g.triples((shape, SUG.suggestedInValues, None)):
+                    try:
+                        import json
+                        data_element_node.suggested_in_values = json.loads(str(value))
+                    except (ValueError, json.JSONDecodeError):
+                        pass
+                    break
+                
+                # Extract suggested min/max length
+                for _, _, value in g.triples((shape, SUG.suggestedMinLength, None)):
+                    try:
+                        data_element_node.suggested_min_length = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                    break
+                
+                for _, _, value in g.triples((shape, SUG.suggestedMaxLength, None)):
+                    try:
+                        data_element_node.suggested_max_length = int(value)
+                    except (ValueError, TypeError):
+                        pass
+                    break
                 
                 # Add to nodes and connect to dataset
                 editor.nodes[data_element_node.id] = data_element_node
@@ -5659,6 +5712,24 @@ def import_csv():
                     data_element_node.pattern = str(value)
                     print(f"Set pattern: {data_element_node.pattern}")
                 
+                # Enumeration values (sh:in)
+                for _, _, in_list in g.triples((shape, SH['in'], None)):
+                    # Extract values from the RDF list
+                    values_list = []
+                    current = in_list
+                    while current != RDF.nil:
+                        for _, _, first_value in g.triples((current, RDF.first, None)):
+                            values_list.append(str(first_value))
+                        # Move to next item in list
+                        rest_items = list(g.triples((current, RDF.rest, None)))
+                        if rest_items:
+                            current = rest_items[0][2]
+                        else:
+                            break
+                    if values_list:
+                        data_element_node.in_values = values_list
+                        print(f"Set in_values: {data_element_node.in_values}")
+            
             print(f"Successfully processed TTL. Created {len(property_shapes)} data element nodes.")
         except Exception as e:
             import traceback

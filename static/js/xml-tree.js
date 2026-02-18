@@ -113,6 +113,28 @@ function convertToTreeData(graphData) {
             parent.children.push(child);
         }
     });
+
+    const resolveLabel = node => {
+        if (node && typeof node.title === 'object') {
+            return node.title.de || node.title.en || node.title.fr || node.title.it || Object.values(node.title)[0] || '';
+        }
+        return (node && (node.title || node.label || node.id)) || '';
+    };
+
+    const compareNodes = (a, b) => {
+        const orderA = Number.isFinite(a.order) ? a.order : Number.POSITIVE_INFINITY;
+        const orderB = Number.isFinite(b.order) ? b.order : Number.POSITIVE_INFINITY;
+        if (orderA !== orderB) {
+            return orderA - orderB;
+        }
+        return resolveLabel(a).localeCompare(resolveLabel(b), 'de', { sensitivity: 'base' });
+    };
+
+    nodeMap.forEach(node => {
+        if (node.children && node.children.length > 1) {
+            node.children.sort(compareNodes);
+        }
+    });
     
     console.log('Tree data - rootNodes:', rootNodes.length);
     if (rootNodes.length > 0) {

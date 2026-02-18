@@ -244,23 +244,39 @@
                                 <div class="row">
                                     <div class="col-6">
                                         <label class="form-label small">Min Length:</label>
-                                        <input type="number" class="form-control form-control-sm" id="min-length">
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" class="form-control form-control-sm" id="min-length">
+                                            <button class="btn btn-outline-secondary" type="button" id="apply-suggested-min-length" onclick="applySuggestedMinLength()" title="Use suggested min length" disabled>Use</button>
+                                        </div>
+                                        <small class="form-text text-muted" id="suggested-min-length-hint" style="display: none;"></small>
                                     </div>
                                     <div class="col-6">
                                         <label class="form-label small">Max Length:</label>
-                                        <input type="number" class="form-control form-control-sm" id="max-length">
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" class="form-control form-control-sm" id="max-length">
+                                            <button class="btn btn-outline-secondary" type="button" id="apply-suggested-max-length" onclick="applySuggestedMaxLength()" title="Use suggested max length" disabled>Use</button>
+                                        </div>
+                                        <small class="form-text text-muted" id="suggested-max-length-hint" style="display: none;"></small>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="constraint-group mb-3" id="pattern-group">
                                 <h6 class="small">Pattern</h6>
-                                <input type="text" class="form-control form-control-sm" id="pattern" placeholder="Regex pattern">
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control form-control-sm" id="pattern" placeholder="Regex pattern">
+                                    <button class="btn btn-outline-secondary" type="button" id="apply-suggested-pattern" onclick="applySuggestedPattern()" title="Use suggested pattern" disabled>Use</button>
+                                </div>
+                                <small class="form-text text-muted" id="suggested-pattern-hint" style="display: none;"></small>
                             </div>
 
                             <div class="constraint-group mb-3" id="enumeration-group">
                                 <h6 class="small">Enumeration</h6>
-                                <input type="text" class="form-control form-control-sm" id="in-values" placeholder="Comma-separated values">
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control form-control-sm" id="in-values" placeholder="Comma-separated values">
+                                    <button class="btn btn-outline-secondary" type="button" id="apply-suggested-enumeration" onclick="applySuggestedEnumeration()" title="Use suggested enumeration values" disabled>Use</button>
+                                </div>
+                                <small class="form-text text-muted" id="suggested-enumeration-hint" style="display: none;"></small>
                             </div>
 
                             <div class="constraint-group mb-3" id="references-group">
@@ -1434,9 +1450,73 @@
                         
                         // Update constraint fields
                         document.getElementById('min-length').value = node.min_length || '';
+                        const suggestedMinLengthBtn = document.getElementById('apply-suggested-min-length');
+                        const suggestedMinLengthHint = document.getElementById('suggested-min-length-hint');
+                        const suggestedMinLength = node.suggested_min_length;
+                        if (suggestedMinLengthBtn) {
+                            suggestedMinLengthBtn.disabled = suggestedMinLength === null || suggestedMinLength === undefined;
+                            suggestedMinLengthBtn.dataset.suggestedMinLength = suggestedMinLength !== null && suggestedMinLength !== undefined ? suggestedMinLength : '';
+                        }
+                        if (suggestedMinLengthHint) {
+                            if (suggestedMinLength !== null && suggestedMinLength !== undefined) {
+                                suggestedMinLengthHint.textContent = `Suggested: ${suggestedMinLength}`;
+                                suggestedMinLengthHint.style.display = 'block';
+                            } else {
+                                suggestedMinLengthHint.textContent = '';
+                                suggestedMinLengthHint.style.display = 'none';
+                            }
+                        }
                         document.getElementById('max-length').value = node.max_length || '';
+                        const suggestedMaxLengthBtn = document.getElementById('apply-suggested-max-length');
+                        const suggestedMaxLengthHint = document.getElementById('suggested-max-length-hint');
+                        const suggestedMaxLength = node.suggested_max_length;
+                        if (suggestedMaxLengthBtn) {
+                            suggestedMaxLengthBtn.disabled = suggestedMaxLength === null || suggestedMaxLength === undefined;
+                            suggestedMaxLengthBtn.dataset.suggestedMaxLength = suggestedMaxLength !== null && suggestedMaxLength !== undefined ? suggestedMaxLength : '';
+                        }
+                        if (suggestedMaxLengthHint) {
+                            if (suggestedMaxLength !== null && suggestedMaxLength !== undefined) {
+                                suggestedMaxLengthHint.textContent = `Suggested: ${suggestedMaxLength}`;
+                                suggestedMaxLengthHint.style.display = 'block';
+                            } else {
+                                suggestedMaxLengthHint.textContent = '';
+                                suggestedMaxLengthHint.style.display = 'none';
+                            }
+                        }
                         document.getElementById('pattern').value = node.pattern || '';
+                        const suggestedPatternBtn = document.getElementById('apply-suggested-pattern');
+                        const suggestedPatternHint = document.getElementById('suggested-pattern-hint');
+                        const suggestedPattern = node.suggested_pattern || '';
+                        if (suggestedPatternBtn) {
+                            suggestedPatternBtn.disabled = !suggestedPattern;
+                            suggestedPatternBtn.dataset.suggestedPattern = suggestedPattern;
+                        }
+                        if (suggestedPatternHint) {
+                            if (suggestedPattern) {
+                                suggestedPatternHint.textContent = `Suggested: ${suggestedPattern}`;
+                                suggestedPatternHint.style.display = 'block';
+                            } else {
+                                suggestedPatternHint.textContent = '';
+                                suggestedPatternHint.style.display = 'none';
+                            }
+                        }
                         document.getElementById('in-values').value = node.in_values ? node.in_values.join(', ') : '';
+                        const suggestedEnumerationBtn = document.getElementById('apply-suggested-enumeration');
+                        const suggestedEnumerationHint = document.getElementById('suggested-enumeration-hint');
+                        const suggestedInValues = node.suggested_in_values || [];
+                        if (suggestedEnumerationBtn) {
+                            suggestedEnumerationBtn.disabled = !suggestedInValues.length;
+                            suggestedEnumerationBtn.dataset.suggestedInValues = JSON.stringify(suggestedInValues);
+                        }
+                        if (suggestedEnumerationHint) {
+                            if (suggestedInValues.length) {
+                                suggestedEnumerationHint.textContent = `Suggested: ${suggestedInValues.join(', ')}`;
+                                suggestedEnumerationHint.style.display = 'block';
+                            } else {
+                                suggestedEnumerationHint.textContent = '';
+                                suggestedEnumerationHint.style.display = 'none';
+                            }
+                        }
                         document.getElementById('node-reference').value = node.node_reference || '';
                         document.getElementById('range').value = node.range || '';
                         document.getElementById('datatype').value = node.datatype || '';
@@ -1452,6 +1532,69 @@
                     }
                 });
         }
+
+        function applySuggestedPattern() {
+            const button = document.getElementById('apply-suggested-pattern');
+            const input = document.getElementById('pattern');
+            if (!button || !input) {
+                return;
+            }
+            const suggestedPattern = button.dataset.suggestedPattern;
+            if (suggestedPattern) {
+                input.value = suggestedPattern;
+            }
+        }
+
+        window.applySuggestedPattern = applySuggestedPattern;
+
+        function applySuggestedEnumeration() {
+            const button = document.getElementById('apply-suggested-enumeration');
+            const input = document.getElementById('in-values');
+            if (!button || !input) {
+                return;
+            }
+            const suggestedInValuesStr = button.dataset.suggestedInValues;
+            if (suggestedInValuesStr) {
+                try {
+                    const suggestedInValues = JSON.parse(suggestedInValuesStr);
+                    if (Array.isArray(suggestedInValues) && suggestedInValues.length) {
+                        input.value = suggestedInValues.join(', ');
+                    }
+                } catch (e) {
+                    console.error('Failed to parse suggested enumeration values:', e);
+                }
+            }
+        }
+
+        window.applySuggestedEnumeration = applySuggestedEnumeration;
+
+        function applySuggestedMinLength() {
+            const button = document.getElementById('apply-suggested-min-length');
+            const input = document.getElementById('min-length');
+            if (!button || !input) {
+                return;
+            }
+            const suggestedMinLength = button.dataset.suggestedMinLength;
+            if (suggestedMinLength !== null && suggestedMinLength !== undefined && suggestedMinLength !== '') {
+                input.value = suggestedMinLength;
+            }
+        }
+
+        window.applySuggestedMinLength = applySuggestedMinLength;
+
+        function applySuggestedMaxLength() {
+            const button = document.getElementById('apply-suggested-max-length');
+            const input = document.getElementById('max-length');
+            if (!button || !input) {
+                return;
+            }
+            const suggestedMaxLength = button.dataset.suggestedMaxLength;
+            if (suggestedMaxLength !== null && suggestedMaxLength !== undefined && suggestedMaxLength !== '') {
+                input.value = suggestedMaxLength;
+            }
+        }
+
+        window.applySuggestedMaxLength = applySuggestedMaxLength;
 
         // Make loadNodeDetails globally accessible
         window.loadNodeDetails = loadNodeDetails;
