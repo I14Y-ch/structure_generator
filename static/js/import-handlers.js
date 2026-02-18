@@ -27,6 +27,7 @@ function importCSV() {
     const file = fileInput.files[0];
     const datasetName = document.getElementById('csv-dataset-name').value;
     const lang = document.getElementById('csv-lang').value;
+    const encoding = document.getElementById('csv-encoding').value;
     
     if (!datasetName) {
         alert('Dataset name is required');
@@ -37,6 +38,7 @@ function importCSV() {
     formData.append('file', file);
     formData.append('dataset_name', datasetName);
     formData.append('lang', lang);
+    formData.append('encoding', encoding);
     
     document.body.classList.add('loading');
     

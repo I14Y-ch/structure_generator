@@ -9,6 +9,7 @@ import requests
 import uuid
 import threading
 import time
+import chardet
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import csv
@@ -5510,6 +5511,68 @@ def import_example_ttl():
         print(f"Error importing example TTL: {str(e)}")
         return jsonify({"error": "Failed to import example TTL"}), 500
 
+def detect_and_decode_csv(file_content: bytes, encoding: str = 'auto') -> tuple[str, str]:
+    """
+    Detect and decode CSV file content with the specified encoding.
+    
+    Args:
+        file_content: Raw bytes from the uploaded file
+        encoding: Encoding to use ('auto' for auto-detection, or specific encoding like 'utf-8', 'latin-1', etc.)
+    
+    Returns:
+        Tuple of (decoded_content, actual_encoding_used)
+    
+    Raises:
+        UnicodeDecodeError: If decoding fails with the specified encoding
+    """
+    # List of common encodings to try for auto-detection
+    common_encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'windows-1252', 'cp1252', 'iso-8859-1']
+    
+    if encoding == 'auto':
+        # First try chardet for intelligent detection
+        try:
+            detected = chardet.detect(file_content)
+            detected_encoding = detected.get('encoding')
+            confidence = detected.get('confidence', 0)
+            
+            print(f"Chardet detected encoding: {detected_encoding} (confidence: {confidence})")
+            
+            # If confidence is high enough, try the detected encoding first
+            if detected_encoding and confidence > 0.7:
+                try:
+                    decoded = file_content.decode(detected_encoding)
+                    print(f"Successfully decoded with detected encoding: {detected_encoding}")
+                    return decoded, detected_encoding
+                except (UnicodeDecodeError, LookupError) as e:
+                    print(f"Failed to decode with detected encoding {detected_encoding}: {e}")
+        except Exception as e:
+            print(f"Chardet detection failed: {e}")
+        
+        # Fall back to trying common encodings
+        for enc in common_encodings:
+            try:
+                decoded = file_content.decode(enc)
+                print(f"Successfully decoded with fallback encoding: {enc}")
+                return decoded, enc
+            except (UnicodeDecodeError, LookupError):
+                continue
+        
+        # If all else fails, use latin-1 which accepts all byte values
+        decoded = file_content.decode('latin-1', errors='replace')
+        print(f"Using latin-1 as last resort with error replacement")
+        return decoded, 'latin-1'
+    else:
+        # Use the specified encoding
+        try:
+            decoded = file_content.decode(encoding)
+            print(f"Successfully decoded with specified encoding: {encoding}")
+            return decoded, encoding
+        except (UnicodeDecodeError, LookupError) as e:
+            raise UnicodeDecodeError(
+                encoding, file_content, 0, len(file_content),
+                f"Failed to decode CSV file with encoding '{encoding}'. Please try a different encoding."
+            )
+
 @app.route('/api/import/csv', methods=['POST'])
 def import_csv():
     """Import a CSV file and convert to SHACL TTL"""
@@ -5531,11 +5594,18 @@ def import_csv():
         # Get dataset name and language from form data
         dataset_name = request.form.get('dataset_name', os.path.splitext(file.filename)[0])
         lang = request.form.get('lang', 'de')
+        encoding = request.form.get('encoding', 'auto')
         
-        print(f"Importing CSV file: {file.filename}, Dataset name: {dataset_name}, Language: {lang}")
+        print(f"Importing CSV file: {file.filename}, Dataset name: {dataset_name}, Language: {lang}, Encoding: {encoding}")
         
-        # Read CSV data
-        csv_data = file.read().decode('utf-8-sig')
+        # Read CSV data with proper encoding detection/handling
+        file_content = file.read()
+        try:
+            csv_data, actual_encoding = detect_and_decode_csv(file_content, encoding)
+            print(f"CSV decoded successfully with encoding: {actual_encoding}")
+        except UnicodeDecodeError as e:
+            print(f"Encoding error: {str(e)}")
+            return jsonify({"error": f"Failed to decode CSV file. The file may not be in {encoding} encoding. Please try a different encoding."}), 400
         
         # Convert to TTL
         ttl = csv_to_ttl(csv_data, dataset_name, lang)

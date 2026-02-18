@@ -591,6 +591,18 @@
                             <option value="en">English (en)</option>
                         </select>
                     </div>
+                    <div class="mb-3">
+                        <label for="csv-encoding" class="form-label">File Encoding:</label>
+                        <select class="form-select" id="csv-encoding">
+                            <option value="auto">Auto-detect</option>
+                            <option value="utf-8">UTF-8</option>
+                            <option value="utf-8-sig">UTF-8 with BOM</option>
+                            <option value="latin-1">ISO-8859-1 (Latin-1)</option>
+                            <option value="windows-1252">Windows-1252</option>
+                            <option value="cp1252">CP1252 (Windows)</option>
+                        </select>
+                        <div class="form-text">Select the character encoding of your CSV file</div>
+                    </div>
                     <div class="alert alert-info">
                         <small>
                             <strong>Note:</strong> The CSV file will be analyzed to automatically detect column data types (text, numbers, dates, etc.).
