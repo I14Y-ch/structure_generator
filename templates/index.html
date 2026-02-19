@@ -244,39 +244,47 @@
                                 <div class="row">
                                     <div class="col-6">
                                         <label class="form-label small">Min Length:</label>
-                                        <div class="input-group input-group-sm">
-                                            <input type="number" class="form-control form-control-sm" id="min-length">
-                                            <button class="btn btn-outline-secondary" type="button" id="apply-suggested-min-length" onclick="applySuggestedMinLength()" title="Use suggested min length" disabled>Use</button>
+                                        <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                            <div style="flex: 1;">
+                                                <input type="number" class="form-control form-control-sm" id="min-length">
+                                                <small class="form-text text-muted" id="suggested-min-length-hint" style="display: none;"></small>
+                                            </div>
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" id="apply-suggested-min-length" onclick="applySuggestedMinLength()" title="Use suggested min length" disabled style="margin-top: 22px; white-space: nowrap;">Use</button>
                                         </div>
-                                        <small class="form-text text-muted" id="suggested-min-length-hint" style="display: none;"></small>
                                     </div>
                                     <div class="col-6">
                                         <label class="form-label small">Max Length:</label>
-                                        <div class="input-group input-group-sm">
-                                            <input type="number" class="form-control form-control-sm" id="max-length">
-                                            <button class="btn btn-outline-secondary" type="button" id="apply-suggested-max-length" onclick="applySuggestedMaxLength()" title="Use suggested max length" disabled>Use</button>
+                                        <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                            <div style="flex: 1;">
+                                                <input type="number" class="form-control form-control-sm" id="max-length">
+                                                <small class="form-text text-muted" id="suggested-max-length-hint" style="display: none;"></small>
+                                            </div>
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" id="apply-suggested-max-length" onclick="applySuggestedMaxLength()" title="Use suggested max length" disabled style="margin-top: 22px; white-space: nowrap;">Use</button>
                                         </div>
-                                        <small class="form-text text-muted" id="suggested-max-length-hint" style="display: none;"></small>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="constraint-group mb-3" id="pattern-group">
                                 <h6 class="small">Pattern</h6>
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control form-control-sm" id="pattern" placeholder="Regex pattern">
-                                    <button class="btn btn-outline-secondary" type="button" id="apply-suggested-pattern" onclick="applySuggestedPattern()" title="Use suggested pattern" disabled>Use</button>
+                                <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                    <div style="flex: 1;">
+                                        <input type="text" class="form-control form-control-sm" id="pattern" placeholder="Regex pattern">
+                                        <small class="form-text text-muted" id="suggested-pattern-hint" style="display: none;"></small>
+                                    </div>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button" id="apply-suggested-pattern" onclick="applySuggestedPattern()" title="Use suggested pattern" disabled style="margin-top: 22px; white-space: nowrap;">Use</button>
                                 </div>
-                                <small class="form-text text-muted" id="suggested-pattern-hint" style="display: none;"></small>
                             </div>
 
                             <div class="constraint-group mb-3" id="enumeration-group">
                                 <h6 class="small">Enumeration</h6>
-                                <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control form-control-sm" id="in-values" placeholder="Comma-separated values">
-                                    <button class="btn btn-outline-secondary" type="button" id="apply-suggested-enumeration" onclick="applySuggestedEnumeration()" title="Use suggested enumeration values" disabled>Use</button>
+                                <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                    <div style="flex: 1;">
+                                        <input type="text" class="form-control form-control-sm" id="in-values" placeholder="Comma-separated values">
+                                        <small class="form-text text-muted" id="suggested-enumeration-hint" style="display: none;"></small>
+                                    </div>
+                                    <button class="btn btn-outline-secondary btn-sm" type="button" id="apply-suggested-enumeration" onclick="applySuggestedEnumeration()" title="Use suggested enumeration values" disabled style="margin-top: 22px; white-space: nowrap;">Use</button>
                                 </div>
-                                <small class="form-text text-muted" id="suggested-enumeration-hint" style="display: none;"></small>
                             </div>
 
                             <div class="constraint-group mb-3" id="references-group">

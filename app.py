@@ -88,6 +88,29 @@ class SessionManager:
             
             return self.sessions[session_id]
 
+def sort_enumeration_values(values: List[str]) -> List[str]:
+    """Sort enumeration values numerically if all are numbers, otherwise alphabetically.
+    
+    Args:
+        values: List of string values to sort
+        
+    Returns:
+        Sorted list of values
+    """
+    if not values:
+        return values
+    
+    # Check if all values can be converted to numbers
+    try:
+        numeric_values = [(float(v), v) for v in values]
+        # If we get here, all values are numeric - sort by numeric value
+        numeric_values.sort(key=lambda x: x[0])
+        return [v[1] for v in numeric_values]
+    except (ValueError, TypeError):
+        # Not all values are numeric - sort alphabetically
+        return sorted(values)
+
+
 class I14YAPIClient:
     """Client for interacting with I14Y API"""
     
@@ -454,8 +477,10 @@ class I14YAPIClient:
                         print(f"Added enum value: {value}")
                 
                 if enum_values:
-                    constraints['in_values'] = enum_values
-                    print(f"Found {len(enum_values)} codelist entries for concept {concept_id}: {enum_values}")
+                    # Sort enumeration values (numerically if all numeric, else alphabetically)
+                    sorted_values = sort_enumeration_values(enum_values)
+                    constraints['in_values'] = sorted_values
+                    print(f"Found {len(sorted_values)} codelist entries for concept {concept_id}: {sorted_values}")
                 else:
                     print(f"No usable values found in codelist entries for concept {concept_id}")
         
@@ -587,6 +612,9 @@ class SHACLNode:
         else:
             # Convert legacy string descriptions to multilingual format
             self.description = {'de': description} if description else {}
+        
+        # Identifier field for datasets (from I14Y or custom)
+        self.identifier = None
         
         # I14Y integration
         self.i14y_id = None  # For concepts from I14Y (the concept UUID)
@@ -784,7 +812,7 @@ class SHACLNode:
             print(f"Applied pattern constraint: {self.pattern}")
         
         if 'in_values' in constraints:
-            self.in_values = constraints['in_values']
+            self.in_values = sort_enumeration_values(constraints['in_values'])
             print(f"Applied enumeration constraint with {len(self.in_values)} values")
         
         if 'min_length' in constraints:
@@ -888,6 +916,7 @@ class SHACLNode:
             'type': self.type,
             'title': self.title,
             'description': self.description,
+            'identifier': self.identifier,
             'i14y_id': self.i14y_id,
             'i14y_data': self.i14y_data,
             'i14y_concept_uri': self.i14y_concept_uri,
@@ -919,6 +948,7 @@ class SHACLNode:
     @classmethod
     def from_dict(cls, data: Dict) -> 'SHACLNode':
         node = cls(data['type'], data['id'], data['title'], data['description'])
+        node.identifier = data.get('identifier')
         node.i14y_id = data.get('i14y_id')
         node.i14y_data = data.get('i14y_data')
         node.i14y_concept_uri = data.get('i14y_concept_uri')
@@ -1988,7 +2018,9 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             in_values_text = self.in_values_var.get().strip()
             if in_values_text:
                 # Split by comma and strip whitespace
-                node.in_values = [v.strip() for v in in_values_text.split(",") if v.strip()]
+                raw_values = [v.strip() for v in in_values_text.split(",") if v.strip()]
+                # Sort values (numerically if all numeric, else alphabetically)
+                node.in_values = sort_enumeration_values(raw_values)
             else:
                 node.in_values = []
             
@@ -2235,6 +2267,11 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, "de")
                 safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, "de")
                 g.add((dataset_shape, SH.description, Literal(ds_desc, lang="de")))
+
+        # Add dataset identifier if available
+        if dataset_node.identifier:
+            identifier_text = sanitize_literal(dataset_node.identifier)
+            g.add((dataset_shape, DCTERMS.identifier, Literal(identifier_text)))
 
         # Collect concepts and classes connected to dataset
         connected_concepts = []
@@ -2792,8 +2829,9 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                 elif p == SH.node:
                     shacl_node.node_reference = str(o)
                 elif p == SH['in']:
-                    # Extract RDF list values
-                    shacl_node.in_values = self._extract_rdf_list(g, o)
+                    # Extract RDF list values and sort them
+                    extracted_values = self._extract_rdf_list(g, o)
+                    shacl_node.in_values = sort_enumeration_values(extracted_values)
                 elif p == DCTERMS.title:
                     if hasattr(o, 'language') and o.language:
                         if o.language == 'de':
@@ -2917,7 +2955,9 @@ class FlaskSHACLGraphEditor:
         if 'pattern' in node_data:
             node.pattern = node_data['pattern'] if node_data['pattern'] else None
         if 'in_values' in node_data:
-            node.in_values = node_data['in_values'] if node_data['in_values'] else []
+            in_values = node_data['in_values'] if node_data['in_values'] else []
+            # Sort enumeration values (numerically if all numeric, else alphabetically)
+            node.in_values = sort_enumeration_values(in_values)
         if 'node_reference' in node_data:
             node.node_reference = node_data['node_reference'] if node_data['node_reference'] else None
         if 'range' in node_data:
@@ -4034,7 +4074,9 @@ def update_constraints(node_id):
     # Handle in_values as comma-separated list
     in_values_text = data.get('in_values', '').strip()
     if in_values_text:
-        node.in_values = [v.strip() for v in in_values_text.split(',') if v.strip()]
+        raw_values = [v.strip() for v in in_values_text.split(',') if v.strip()]
+        # Sort values (numerically if all numeric, else alphabetically)
+        node.in_values = sort_enumeration_values(raw_values)
     else:
         node.in_values = []
         
@@ -4790,6 +4832,36 @@ def link_i14y_dataset():
         # Set the I14Y ID for the dataset
         dataset_node.i14y_id = dataset_data.get('id')
         
+        # Generate identifier from the title (English preferred, fallback to German)
+        # This can be overridden by the user
+        identifier = None
+        
+        # Try to extract English or German title and generate identifier from it
+        if isinstance(dataset_node.title, dict):
+            # Prefer English, fall back to German
+            title_for_identifier = dataset_node.title.get('en') or dataset_node.title.get('de')
+        else:
+            title_for_identifier = dataset_node.title if isinstance(dataset_node.title, str) else None
+        
+        if title_for_identifier:
+            # Convert title to identifier: lowercase, replace spaces/special chars with underscore
+            identifier = (title_for_identifier
+                         .lower()
+                         .replace(' ', '_')
+                         .replace('-', '_')
+                         .replace('/', '_')
+                         .replace('\\', '_')
+                         .replace('.', '_'))
+            # Remove any characters that aren't alphanumeric or underscore
+            identifier = ''.join(c if c.isalnum() or c == '_' else '' for c in identifier)
+            # Remove leading/trailing underscores and collapse multiple underscores
+            identifier = identifier.strip('_')
+            while '__' in identifier:
+                identifier = identifier.replace('__', '_')
+        
+        # Set the identifier
+        dataset_node.identifier = identifier or dataset_data.get('id')
+        
         # Set the I14Y dataset URI
         dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{dataset_data.get('id')}/description"
         
@@ -4801,6 +4873,7 @@ def link_i14y_dataset():
                 "id": dataset_node.id,
                 "title": dataset_node.title,
                 "description": dataset_node.description,
+                "identifier": dataset_node.identifier,
                 "i14y_id": dataset_node.i14y_id,
                 "i14y_dataset_uri": dataset_node.i14y_dataset_uri
             }
@@ -5131,12 +5204,15 @@ def handle_dataset():
             dataset_node.title = data['title']
         if 'description' in data:
             dataset_node.description = data['description']
+        if 'identifier' in data:
+            dataset_node.identifier = data['identifier']
         return jsonify({'success': True})
     else:
         # Return dataset information
         return jsonify({
             'title': dataset_node.title,
-            'description': dataset_node.description
+            'description': dataset_node.description,
+            'identifier': dataset_node.identifier
         })
 
 def parse_ttl_to_nodes(g: Graph, editor) -> bool:
@@ -5708,7 +5784,9 @@ def import_csv():
                 for _, _, value in g.triples((shape, SUG.suggestedInValues, None)):
                     try:
                         import json
-                        data_element_node.suggested_in_values = json.loads(str(value))
+                        suggested_values = json.loads(str(value))
+                        # Sort the suggested values (numerically if all numeric, else alphabetically)
+                        data_element_node.suggested_in_values = sort_enumeration_values(suggested_values) if isinstance(suggested_values, list) else suggested_values
                     except (ValueError, json.JSONDecodeError):
                         pass
                     break
