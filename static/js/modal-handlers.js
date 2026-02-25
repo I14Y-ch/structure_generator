@@ -571,27 +571,18 @@ function selectI14YLinkResult(index) {
     const result = lastLinkI14YSearchResults[index];
     if (!result) return;
     
-    // Get the currently selected node - support both network view (selectedNodes) and tree view (selectedNodeId)
-    let nodeId = null;
-    
-    if (window.selectedNodeId) {
-        // Tree view or single selection mode
-        nodeId = window.selectedNodeId;
-    } else if (selectedNodes && selectedNodes.size === 1) {
-        // Network view with Set-based selection
-        const selectedNodeIds = Array.from(selectedNodes);
-        nodeId = selectedNodeIds[0];
-        
-        // Extract ID if it's an object with an id property
-        if (typeof nodeId === 'object' && nodeId !== null && 'id' in nodeId) {
-            nodeId = nodeId.id;
-        }
-    }
-    
-    if (!nodeId) {
+    const selectedNode = getSingleSelectedNode();
+    if (!selectedNode || !selectedNode.id) {
         alert('Please select exactly one data element to link');
         return;
     }
+    
+    if (selectedNode.type && selectedNode.type !== 'data_element') {
+        alert('Please select a data element node to link');
+        return;
+    }
+    
+    const nodeId = selectedNode.id;
     
     console.log('Node ID for linking:', nodeId, typeof nodeId);
     
@@ -1346,21 +1337,18 @@ function selectI14YDatasetResult(index) {
     const result = lastI14YDatasetSearchResults[index];
     if (!result) return;
     
-    // Get the currently selected node
-    const selectedNodeIds = Array.from(selectedNodes);
-    if (selectedNodeIds.length !== 1) {
+    const selectedNode = getSingleSelectedNode();
+    if (!selectedNode || !selectedNode.id) {
         alert('Please select exactly one dataset node to link');
         return;
     }
     
-    // Make sure we're getting just the node ID string, not the full node object
-    let nodeId = selectedNodeIds[0];
-    console.log('Raw selected node ID for dataset linking:', nodeId, typeof nodeId);
-    
-    // Extract ID if it's an object with an id property
-    if (typeof nodeId === 'object' && nodeId !== null && 'id' in nodeId) {
-        nodeId = nodeId.id;
+    if (selectedNode.type && selectedNode.type !== 'dataset') {
+        alert('Please select a dataset node to link');
+        return;
     }
+    
+    const nodeId = selectedNode.id;
     
     console.log('Processed node ID for dataset linking:', nodeId, typeof nodeId);
     
@@ -1512,6 +1500,49 @@ function selectI14YDatasetResult(index) {
         alert('Error linking to I14Y dataset: ' + error.message);
         console.error('Error linking to I14Y dataset:', error);
     });
+}
+
+function getSingleSelectedNode() {
+    const candidates = [];
+
+    if (window.selectedNodeId) {
+        candidates.push({ id: window.selectedNodeId });
+    }
+
+    if (typeof selectedNodes !== 'undefined' && selectedNodes) {
+        const networkSelection = Array.isArray(selectedNodes)
+            ? selectedNodes
+            : Array.from(selectedNodes);
+
+        networkSelection.forEach(node => {
+            if (!node) {
+                return;
+            }
+
+            if (typeof node === 'object' && node.id) {
+                candidates.push({ id: node.id, type: node.type });
+            } else {
+                candidates.push({ id: node });
+            }
+        });
+    }
+
+    const uniqueById = [];
+    const seen = new Set();
+
+    candidates.forEach(node => {
+        if (!node || !node.id || seen.has(node.id)) {
+            return;
+        }
+        seen.add(node.id);
+        uniqueById.push(node);
+    });
+
+    if (uniqueById.length !== 1) {
+        return null;
+    }
+
+    return uniqueById[0];
 }
 
 // Alias for backwards compatibility with existing HTML
