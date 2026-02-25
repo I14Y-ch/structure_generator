@@ -427,6 +427,28 @@ class I14YAPIClient:
             print(f"Request error: {e}")
             return None
     
+    def get_public_dataset_details(self, dataset_id: str) -> Optional[Dict]:
+        """Fetch dataset details from the public I14Y API (api.i14y.admin.ch).
+        This endpoint returns the 'identifiers' list with human-readable identifiers."""
+        public_url = f"https://api.i14y.admin.ch/api/public/v1/datasets/{dataset_id}"
+        print(f"Fetching public dataset details from: {public_url}")
+        try:
+            response = requests.get(public_url, timeout=10)
+            print(f"Public API response status: {response.status_code}")
+            if response.status_code == 200:
+                raw = response.json()
+                # The public API wraps the payload in {"data": {...}}
+                data = raw.get('data', raw) if isinstance(raw, dict) else raw
+                print(f"Public API keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+                print(f"Public API identifiers: {data.get('identifiers') if isinstance(data, dict) else 'n/a'}")
+                return data
+            else:
+                print(f"Public API returned {response.status_code} for {dataset_id}")
+                return None
+        except Exception as e:
+            print(f"Error fetching public dataset details: {e}")
+            return None
+
     def extract_constraints_from_concept(self, concept_data: Dict) -> Dict:
         """Extract SHACL constraints from I14Y concept data"""
         constraints = {}
@@ -853,6 +875,20 @@ class SHACLNode:
     
     def get_multilingual_title(self) -> Dict[str, str]:
         """Get multilingual titles from I14Y data or fallback to single title"""
+        if isinstance(self.title, dict):
+            base_title = (self.title.get('de') or
+                         self.title.get('en') or
+                         self.title.get('fr') or
+                         self.title.get('it') or
+                         self.title.get('rm') or
+                         '')
+            return {
+                'de': str(self.title.get('de') or base_title),
+                'en': str(self.title.get('en') or base_title),
+                'fr': str(self.title.get('fr') or base_title),
+                'it': str(self.title.get('it') or base_title)
+            }
+
         if self.i14y_data and 'title' in self.i14y_data:
             title_obj = self.i14y_data['title']
             if isinstance(title_obj, dict):
@@ -864,18 +900,19 @@ class SHACLNode:
                              title_obj.get('rm') or 
                              self.title)
                 return {
-                    'de': title_obj.get('de', base_title),
-                    'en': title_obj.get('en', base_title),
-                    'fr': title_obj.get('fr', base_title),
-                    'it': title_obj.get('it', base_title)
+                    'de': str(title_obj.get('de', base_title)),
+                    'en': str(title_obj.get('en', base_title)),
+                    'fr': str(title_obj.get('fr', base_title)),
+                    'it': str(title_obj.get('it', base_title))
                 }
         
         # Return same title for all languages as fallback
+        title_value = str(self.title) if self.title is not None else ''
         return {
-            'de': self.title,
-            'en': self.title,
-            'fr': self.title,
-            'it': self.title
+            'de': title_value,
+            'en': title_value,
+            'fr': title_value,
+            'it': title_value
         }
     
     def get_multilingual_description(self) -> Dict[str, str]:
@@ -4003,6 +4040,7 @@ def get_node(node_id):
         'type': node.type,
         'title': node.title,
         'description': node.description,
+        'identifier': node.identifier,
         'i14y_id': node.i14y_id,
         'i14y_data': node.i14y_data,
         'i14y_concept_uri': node.i14y_concept_uri,
@@ -4755,9 +4793,38 @@ def search_i14y_datasets():
         return jsonify({"datasets": []})
     
     try:
-        # Use I14Y client to search for datasets
-        print(f"Searching for datasets with query: '{query}'")
-        results = editor.i14y_client.search_datasets(query, page, page_size)
+        # If query contains a UUID (dataset GUID), fetch it directly
+        normalized_query = query.strip()
+        dataset_guid = None
+
+        # Check direct query first
+        direct_candidate = normalized_query.strip('{}')
+        try:
+            dataset_guid = str(uuid.UUID(direct_candidate))
+        except (ValueError, TypeError):
+            dataset_guid = None
+
+        # If not direct UUID, try extracting from URL/path-like query
+        if not dataset_guid and normalized_query:
+            for part in normalized_query.replace('?', '/').replace('&', '/').split('/'):
+                candidate = part.strip().strip('{}')
+                if not candidate:
+                    continue
+                try:
+                    dataset_guid = str(uuid.UUID(candidate))
+                    break
+                except (ValueError, TypeError):
+                    continue
+
+        if dataset_guid:
+            print(f"Detected dataset GUID query: {dataset_guid}")
+            dataset = editor.i14y_client.get_dataset_details(dataset_guid)
+            results = [dataset] if dataset else []
+        else:
+            # Use I14Y client to search for datasets by text
+            print(f"Searching for datasets with query: '{query}'")
+            results = editor.i14y_client.search_datasets(query, page, page_size)
+
         print(f"Found {len(results)} datasets")
         if results:
             print(f"First result: {results[0].get('title') if results[0] else None}")
@@ -4831,36 +4898,56 @@ def link_i14y_dataset():
         
         # Set the I14Y ID for the dataset
         dataset_node.i14y_id = dataset_data.get('id')
-        
-        # Generate identifier from the title (English preferred, fallback to German)
-        # This can be overridden by the user
-        identifier = None
-        
-        # Try to extract English or German title and generate identifier from it
-        if isinstance(dataset_node.title, dict):
-            # Prefer English, fall back to German
-            title_for_identifier = dataset_node.title.get('en') or dataset_node.title.get('de')
-        else:
-            title_for_identifier = dataset_node.title if isinstance(dataset_node.title, str) else None
-        
-        if title_for_identifier:
-            # Convert title to identifier: lowercase, replace spaces/special chars with underscore
-            identifier = (title_for_identifier
-                         .lower()
-                         .replace(' ', '_')
-                         .replace('-', '_')
-                         .replace('/', '_')
-                         .replace('\\', '_')
-                         .replace('.', '_'))
-            # Remove any characters that aren't alphanumeric or underscore
-            identifier = ''.join(c if c.isalnum() or c == '_' else '' for c in identifier)
-            # Remove leading/trailing underscores and collapse multiple underscores
-            identifier = identifier.strip('_')
-            while '__' in identifier:
-                identifier = identifier.replace('__', '_')
-        
-        # Set the identifier
-        dataset_node.identifier = identifier or dataset_data.get('id')
+
+        # Always fetch from the public API to get the 'identifiers' list
+        # (the internal Catalog API does not reliably return this field)
+        i14y_guid = dataset_data.get('id')
+        if i14y_guid:
+            try:
+                public_data = editor.i14y_client.get_public_dataset_details(i14y_guid)
+                if public_data and isinstance(public_data, dict):
+                    # Merge: public_data wins, so identifiers/identifier from public API overwrite
+                    dataset_data = {**dataset_data, **public_data}
+                    print(f"Enriched with public API data. identifiers={public_data.get('identifiers')}")
+            except Exception as enrich_error:
+                print(f"Warning: Failed to fetch public dataset details: {enrich_error}")
+
+        # Store full I14Y dataset payload for UI display
+        dataset_node.i14y_data = dataset_data
+
+        # Extract human-readable identifier from the 'identifiers' list (first non-UUID string)
+        i14y_identifier = None
+        identifiers = dataset_data.get('identifiers')
+        if isinstance(identifiers, list):
+            for entry in identifiers:
+                value = None
+                if isinstance(entry, str):
+                    value = entry
+                elif isinstance(entry, dict):
+                    value = entry.get('notation') or entry.get('identifier')
+                if value:
+                    try:
+                        uuid.UUID(str(value).strip())
+                        # It's a UUID — skip, keep looking
+                    except (ValueError, TypeError):
+                        i14y_identifier = str(value)
+                        break
+            # Fallback: use first entry even if it's a UUID
+            if not i14y_identifier and identifiers:
+                first = identifiers[0]
+                if isinstance(first, str):
+                    i14y_identifier = first
+                elif isinstance(first, dict):
+                    i14y_identifier = first.get('notation') or first.get('identifier')
+
+        # Further fallback to plain 'identifier' field or the GUID itself
+        if not i14y_identifier:
+            i14y_identifier = dataset_data.get('identifier') or dataset_data.get('id')
+
+        print(f"Resolved i14y_identifier: {i14y_identifier}")
+
+        # Set the identifier on the node
+        dataset_node.identifier = i14y_identifier
         
         # Set the I14Y dataset URI
         dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{dataset_data.get('id')}/description"
@@ -5767,6 +5854,8 @@ def import_csv():
                 
                 # Create a data element node for this property
                 data_element_node = SHACLNode('data_element', title=prop_name)
+                data_element_node.local_name = prop_name
+                data_element_node.identifier = prop_name
                 data_element_node.datatype = datatype or "xsd:string"
 
                 for _, _, value in g.triples((shape, SH.order, None)):

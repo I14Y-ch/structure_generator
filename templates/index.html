@@ -529,7 +529,7 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <div class="input-group">
-                            <input type="text" class="form-control" id="i14y-dataset-search-query" placeholder="Search datasets...">
+                            <input type="text" class="form-control" id="i14y-dataset-search-query" placeholder="Search datasets or paste GUID...">
                             <button class="btn btn-outline-secondary" onclick="searchI14YDatasets()">Search</button>
                         </div>
                     </div>
@@ -846,6 +846,44 @@
             if (typeof obj === 'string') return obj;
             return obj[lang] || '';
         }
+
+        function getI14YDatasetIdentifier(node) {
+            if (!node) return '';
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+            const candidates = [];
+            if (node.i14y_data && node.i14y_data.identifier) {
+                candidates.push(node.i14y_data.identifier);
+            }
+
+            if (node.i14y_data && Array.isArray(node.i14y_data.identifiers)) {
+                node.i14y_data.identifiers.forEach((entry) => {
+                    if (typeof entry === 'string') {
+                        candidates.push(entry);
+                        return;
+                    }
+                    if (entry && typeof entry === 'object') {
+                        if (entry.notation) {
+                            candidates.push(entry.notation);
+                        }
+                        if (entry.identifier) {
+                            candidates.push(entry.identifier);
+                        }
+                    }
+                });
+            }
+
+            if (node.identifier) {
+                candidates.push(node.identifier);
+            }
+
+            const normalized = candidates
+                .map(value => (value == null ? '' : String(value).trim()))
+                .filter(value => value.length > 0);
+
+            const nonUuid = normalized.find(value => !uuidRegex.test(value));
+            return nonUuid || normalized[0] || '';
+        }
         
         // Helper function to escape HTML
         function escapeHtml(unsafe) {
@@ -1153,8 +1191,9 @@
                             <div class="mb-3">
                                 <label for="edit-dataset-identifier" class="form-label small">Identifier:</label>
                                 <input type="text" class="form-control form-control-sm" id="edit-dataset-identifier" value="${escapeHtml(node.identifier || '')}" ${isLinked ? 'readonly' : ''} placeholder="Dataset identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
-                                <div class="form-text">Unique identifier for this dataset (letters, numbers, hyphens, underscores only)</div>
-                                ${isLinked ? '<small class="text-muted">Identifier is managed by I14Y</small>' : ''}
+                                ${isLinked ? '' : '<div class="form-text">Unique identifier for this dataset (letters, numbers, hyphens, underscores only)</div>'}
+                                ${isLinked ? '<small class="text-muted">Identifier is managed on I14Y</small>' : ''}
+                                ${isLinked && node.i14y_id ? `<small class="text-muted d-block">GUID: ${escapeHtml(node.i14y_id)}</small>` : ''}
                             </div>
                             ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
                             ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100 mb-2" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
@@ -1366,7 +1405,7 @@
                             </div>
                             <div class="mb-3">
                                 <label for="edit-data-element-identifier" class="form-label small">Identifier:</label>
-                                <input type="text" class="form-control form-control-sm" id="edit-data-element-identifier" value="${escapeHtml(node.identifier || '')}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+                                <input type="text" class="form-control form-control-sm" id="edit-data-element-identifier" value="${escapeHtml(node.identifier || node.local_name || getMultilingualText(node.title) || '')}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
                                 <div class="form-text">Unique identifier for this data element (letters, numbers, hyphens, underscores only)</div>
                             </div>
                             <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDataElementInfo()">Update Data Element</button>

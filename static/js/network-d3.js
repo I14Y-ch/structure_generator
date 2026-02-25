@@ -153,8 +153,29 @@ function loadGraphWithD3() {
         debugEl.innerHTML = '<div>Loading graph data...</div>';
     }
     
-    fetch('/api/graph')
-        .then(response => response.json())
+    const fetchGraphData = (attempt = 1, maxAttempts = 3) => {
+        return fetch('/api/graph', { cache: 'no-store' })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .catch(error => {
+                if (attempt < maxAttempts) {
+                    const retryDelayMs = attempt * 500;
+                    console.warn(`Graph fetch attempt ${attempt} failed, retrying in ${retryDelayMs}ms`, error);
+                    if (debugEl) {
+                        debugEl.innerHTML += `<div style="color: #b36b00;">Retrying graph load (${attempt}/${maxAttempts - 1})...</div>`;
+                    }
+                    return new Promise(resolve => setTimeout(resolve, retryDelayMs))
+                        .then(() => fetchGraphData(attempt + 1, maxAttempts));
+                }
+                throw error;
+            });
+    };
+
+    fetchGraphData()
         .then(data => {
             console.log('Received graph data:', data);
             

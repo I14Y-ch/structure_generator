@@ -227,7 +227,14 @@ function updateDataElementInfo() {
         return;
     }
 
-    const localName = document.getElementById('edit-data-element-local-name').value;
+    const title = {
+        de: document.getElementById('edit-data-element-title-de').value.trim(),
+        fr: document.getElementById('edit-data-element-title-fr').value.trim(),
+        it: document.getElementById('edit-data-element-title-it').value.trim(),
+        en: document.getElementById('edit-data-element-title-en').value.trim()
+    };
+
+    const localName = title.en || title.de || title.fr || title.it;
     
     // Collect multilingual descriptions
     const description = {
@@ -241,7 +248,7 @@ function updateDataElementInfo() {
     const identifier = document.getElementById('edit-data-element-identifier').value.trim();
 
     if (!localName) {
-        alert('Local name is required');
+        alert('At least one title (in any language) is required');
         return;
     }
 
@@ -249,7 +256,7 @@ function updateDataElementInfo() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            title: localName,
+            title: title,
             local_name: localName,
             description: description,
             identifier: identifier
