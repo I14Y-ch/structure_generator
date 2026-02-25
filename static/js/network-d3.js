@@ -240,16 +240,34 @@ function loadGraphWithD3() {
                 };
             });
             
-            // Process the links (edges)
-            links = data.edges.map(edge => {
-                return {
-                    ...edge,
-                    source: edge.from,
-                    target: edge.to,
-                    color: '#848484',
-                    width: 1
-                };
-            });
+            // Process the links (edges) and drop invalid ones that reference missing nodes
+            const nodeIds = new Set(nodes.map(node => node.id));
+            const skippedEdges = [];
+
+            links = data.edges
+                .map(edge => {
+                    return {
+                        ...edge,
+                        source: edge.from,
+                        target: edge.to,
+                        color: '#848484',
+                        width: 1
+                    };
+                })
+                .filter(edge => {
+                    const valid = nodeIds.has(edge.source) && nodeIds.has(edge.target);
+                    if (!valid) {
+                        skippedEdges.push(edge.id || `${edge.source}->${edge.target}`);
+                    }
+                    return valid;
+                });
+
+            if (skippedEdges.length > 0) {
+                console.warn('Skipped invalid edges with missing endpoints:', skippedEdges);
+                if (debugEl) {
+                    debugEl.innerHTML += `<div style="color: #b36b00;">Skipped ${skippedEdges.length} invalid edge(s)</div>`;
+                }
+            }
             
             console.log('Processed nodes:', nodes);
             console.log('Processed links:', links);

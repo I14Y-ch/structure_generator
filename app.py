@@ -5789,28 +5789,22 @@ def import_csv():
             with open('/tmp/csv_import.log', 'a') as f:
                 f.write("TTL parsed successfully\n")
             
-            # Clear existing nodes except for the dataset node
+            # Reset full structure for a clean import session
+            editor.reset_structure()
+
+            # Get the freshly created dataset node and apply import metadata
             dataset_node = None
-            nodes_to_remove = []
-            
-            for node_id, node in editor.nodes.items():
+            for node in editor.nodes.values():
                 if node.type == 'dataset':
                     dataset_node = node
-                else:
-                    nodes_to_remove.append(node_id)
-            
-            # Remove non-dataset nodes
-            for node_id in nodes_to_remove:
-                del editor.nodes[node_id]
-            
-            # Create or update dataset node with the provided name
-            if dataset_node:
-                dataset_node.title = dataset_name
-                # Clear any existing connections
-                dataset_node.connections = set()
-            else:
+                    break
+
+            if not dataset_node:
                 dataset_node = SHACLNode('dataset', title=dataset_name)
                 editor.nodes[dataset_node.id] = dataset_node
+
+            dataset_node.title = dataset_name
+            dataset_node.description = f"Dataset imported from {file.filename}"
             
             print(f"Using dataset node: {dataset_node.id} with title: {dataset_node.title}")
             
@@ -6020,32 +6014,22 @@ def import_xsd():
             g = Graph()
             g.parse(data=ttl, format='turtle')
             
-            # Clear existing nodes except for the dataset node
+            # Reset full structure for a clean import session
+            editor.reset_structure()
+
+            # Get the freshly created dataset node and apply import metadata
             dataset_node = None
-            nodes_to_remove = []
-            
-            for node_id, node in editor.nodes.items():
+            for node in editor.nodes.values():
                 if node.type == 'dataset':
                     dataset_node = node
-                else:
-                    nodes_to_remove.append(node_id)
-            
-            # Remove non-dataset nodes
-            for node_id in nodes_to_remove:
-                del editor.nodes[node_id]
-            
-            # Clear edges
-            editor.edges = {}
-            
-            # Create or update dataset node with the provided name
-            if dataset_node:
-                dataset_node.title = dataset_name
-                dataset_node.description = f"Dataset imported from {file.filename}"
-                # Clear any existing connections
-                dataset_node.connections = set()
-            else:
+                    break
+
+            if not dataset_node:
                 dataset_node = SHACLNode('dataset', title=dataset_name, description=f"Dataset imported from {file.filename}")
                 editor.nodes[dataset_node.id] = dataset_node
+
+            dataset_node.title = dataset_name
+            dataset_node.description = f"Dataset imported from {file.filename}"
             
             print(f"Using dataset node: {dataset_node.id} with title: {dataset_node.title}")
             

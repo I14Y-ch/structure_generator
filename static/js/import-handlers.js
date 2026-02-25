@@ -1,38 +1,138 @@
-// CSV Import Modal handler
-function showCSVImportModal(fileInput) {
+const IMPORT_DEFAULT_DATASET_NAME = 'Imported Dataset';
+const IMPORT_ERROR_NO_FILE = 'No file selected';
+const IMPORT_ERROR_DATASET_REQUIRED = 'Dataset name is required';
+const IMPORT_SUCCESS_CSV_HTML = '<small><strong>Success:</strong> CSV file imported.</small>';
+const IMPORT_SUCCESS_XSD_HTML = '<small><strong>Success:</strong> XSD file imported.</small>';
+
+function showSelectionStatus(html) {
+    const status = document.getElementById('selection-status');
+    if (!status) {
+        return;
+    }
+
+    status.style.display = 'block';
+    status.innerHTML = html;
+    setTimeout(() => { status.style.display = 'none'; }, 3000);
+}
+
+function showSuccessStatus(message) {
+    showSelectionStatus(`<small><strong>Success:</strong> ${message}</small>`);
+}
+
+function getApiErrorMessage(data) {
+    return (data && data.error) || 'Unknown error';
+}
+
+function showActionError(errorLabel, error) {
+    const errorMessage = error && error.message ? error.message : String(error);
+    alert(`${errorLabel}: ${errorMessage}`);
+    console.error(`${errorLabel}:`, error);
+}
+
+function showImportModal(fileInput, extension, invalidFileMessage, modalId) {
     if (!fileInput.files || fileInput.files.length === 0) {
         console.log('No file selected');
         return;
     }
-    
+
     const file = fileInput.files[0];
-    if (!file.name.endsWith('.csv')) {
-        alert('Please select a CSV file');
+    if (!file.name.endsWith(extension)) {
+        alert(invalidFileMessage);
         fileInput.value = '';
         return;
     }
-    
-    // Show the modal
-    new bootstrap.Modal(document.getElementById('csvImportModal')).show();
+
+    new bootstrap.Modal(document.getElementById(modalId)).show();
+}
+
+function showCSVImportModal(fileInput) {
+    showImportModal(fileInput, '.csv', 'Please select a CSV file', 'csvImportModal');
+}
+
+function handleImportSuccess(modalId, successHtml, resetFormFields) {
+    const modalElement = document.getElementById(modalId);
+    const modalInstance = bootstrap.Modal.getInstance(modalElement);
+    if (modalInstance) {
+        modalInstance.hide();
+    }
+
+    if (window.clearNodeSelection) {
+        window.clearNodeSelection();
+    }
+
+    showSelectionStatus(successHtml);
+
+    loadGraphWithD3();
+
+    if (typeof resetFormFields === 'function') {
+        resetFormFields();
+    }
+}
+
+function runImportRequest({ url, formData, modalId, successHtml, resetFormFields, errorLabel }) {
+    document.body.classList.add('loading');
+
+    return fetch(url, {
+        method: 'POST',
+        body: formData
+    })
+    .then(async response => {
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            throw new Error('Invalid server response');
+        }
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Unknown error');
+        }
+
+        handleImportSuccess(modalId, successHtml, resetFormFields);
+    })
+    .catch(error => {
+        showActionError(errorLabel, error);
+    })
+    .finally(() => {
+        document.body.classList.remove('loading');
+    });
+}
+
+function getRequiredFile(fileInputId) {
+    const fileInput = document.getElementById(fileInputId);
+    if (!fileInput.files || fileInput.files.length === 0) {
+        alert(IMPORT_ERROR_NO_FILE);
+        return null;
+    }
+    return { fileInput, file: fileInput.files[0] };
+}
+
+function getRequiredValue(inputId, message) {
+    const value = document.getElementById(inputId).value;
+    if (!value) {
+        alert(message);
+        return null;
+    }
+    return value;
 }
 
 // CSV Import function
 function importCSV() {
-    const fileInput = document.getElementById('csv-file');
-    if (!fileInput.files || fileInput.files.length === 0) {
-        alert('No file selected');
+    const fileData = getRequiredFile('csv-file');
+    if (!fileData) {
         return;
     }
-    
-    const file = fileInput.files[0];
-    const datasetName = document.getElementById('csv-dataset-name').value;
+
+    const { fileInput, file } = fileData;
+    const datasetName = getRequiredValue('csv-dataset-name', IMPORT_ERROR_DATASET_REQUIRED);
+    if (!datasetName) {
+        return;
+    }
     const lang = document.getElementById('csv-lang').value;
     const encoding = document.getElementById('csv-encoding').value;
-    
-    if (!datasetName) {
-        alert('Dataset name is required');
-        return;
-    }
     
     const formData = new FormData();
     formData.append('file', file);
@@ -40,75 +140,37 @@ function importCSV() {
     formData.append('lang', lang);
     formData.append('encoding', encoding);
     
-    document.body.classList.add('loading');
-    
-    fetch('/api/import/csv', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        document.body.classList.remove('loading');
-        
-        if (data.success) {
-            // Hide the modal
-            bootstrap.Modal.getInstance(document.getElementById('csvImportModal')).hide();
-            
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> CSV file imported.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
-            
-            // Reload the graph
-            loadGraphWithD3();
-        } else {
-            alert('Error importing CSV: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        document.body.classList.remove('loading');
-        alert('Error importing CSV: ' + error.message);
-        console.error('Error importing CSV:', error);
+    runImportRequest({
+        url: '/api/import/csv',
+        formData,
+        modalId: 'csvImportModal',
+        successHtml: IMPORT_SUCCESS_CSV_HTML,
+        resetFormFields: () => {
+            document.getElementById('csv-dataset-name').value = IMPORT_DEFAULT_DATASET_NAME;
+            document.getElementById('csv-lang').value = 'de';
+            document.getElementById('csv-encoding').value = 'auto';
+        },
+        errorLabel: 'Error importing CSV'
     });
     
     // Reset file input
     fileInput.value = '';
 }
 
-// XSD Import Modal handler
 function showXSDImportModal(fileInput) {
-    if (!fileInput.files || fileInput.files.length === 0) {
-        console.log('No file selected');
-        return;
-    }
-    
-    const file = fileInput.files[0];
-    if (!file.name.endsWith('.xsd')) {
-        alert('Please select an XSD file');
-        fileInput.value = '';
-        return;
-    }
-    
-    // Show the modal
-    new bootstrap.Modal(document.getElementById('xsdImportModal')).show();
+    showImportModal(fileInput, '.xsd', 'Please select an XSD file', 'xsdImportModal');
 }
 
 // XSD Import function
 function importXSD() {
-    const fileInput = document.getElementById('xsd-file');
-    if (!fileInput.files || fileInput.files.length === 0) {
-        alert('No file selected');
+    const fileData = getRequiredFile('xsd-file');
+    if (!fileData) {
         return;
     }
-    
-    const file = fileInput.files[0];
-    const datasetName = document.getElementById('xsd-dataset-name').value;
-    
+
+    const { fileInput, file } = fileData;
+    const datasetName = getRequiredValue('xsd-dataset-name', IMPORT_ERROR_DATASET_REQUIRED);
     if (!datasetName) {
-        alert('Dataset name is required');
         return;
     }
     
@@ -116,38 +178,15 @@ function importXSD() {
     formData.append('file', file);
     formData.append('dataset_name', datasetName);
     
-    document.body.classList.add('loading');
-    
-    fetch('/api/import/xsd', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        document.body.classList.remove('loading');
-        
-        if (data.success) {
-            // Hide the modal
-            bootstrap.Modal.getInstance(document.getElementById('xsdImportModal')).hide();
-            
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> XSD file imported.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
-            
-            // Reload the graph
-            loadGraphWithD3();
-        } else {
-            alert('Error importing XSD: ' + (data.error || 'Unknown error'));
-        }
-    })
-    .catch(error => {
-        document.body.classList.remove('loading');
-        alert('Error importing XSD: ' + error.message);
-        console.error('Error importing XSD:', error);
+    runImportRequest({
+        url: '/api/import/xsd',
+        formData,
+        modalId: 'xsdImportModal',
+        successHtml: IMPORT_SUCCESS_XSD_HTML,
+        resetFormFields: () => {
+            document.getElementById('xsd-dataset-name').value = IMPORT_DEFAULT_DATASET_NAME;
+        },
+        errorLabel: 'Error importing XSD'
     });
     
     // Reset file input
@@ -200,23 +239,16 @@ function updateDatasetInfo() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Dataset updated.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Dataset updated.');
 
             // Reload the graph to show updated information
             loadGraphWithD3();
         } else {
-            alert('Error updating dataset: ' + (data.error || 'Unknown error'));
+            showActionError('Error updating dataset', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error updating dataset: ' + error.message);
-        console.error('Error updating dataset:', error);
+        showActionError('Error updating dataset', error);
     });
 }
 
@@ -265,23 +297,16 @@ function updateDataElementInfo() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Data element updated.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Data element updated.');
             
             // Reload the graph to show updated information
             loadGraphWithD3();
         } else {
-            alert('Error updating data element: ' + (data.error || 'Unknown error'));
+            showActionError('Error updating data element', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error updating data element: ' + error.message);
-        console.error('Error updating data element:', error);
+        showActionError('Error updating data element', error);
     });
 }
 
@@ -328,23 +353,16 @@ function updateNodeInfo() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Node updated.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Node updated.');
             
             // Reload the graph to show updated information
             loadGraphWithD3();
         } else {
-            alert('Error updating node: ' + (data.error || 'Unknown error'));
+            showActionError('Error updating node', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error updating node: ' + error.message);
-        console.error('Error updating node:', error);
+        showActionError('Error updating node', error);
     });
 }
 
@@ -366,24 +384,17 @@ function unlinkDataElementFromConcept() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Data element detached from concept.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Data element detached from concept.');
             
             // Reload the graph and node details
             loadGraphWithD3();
             loadNodeDetails(window.selectedNodeId);
         } else {
-            alert('Error unlinking data element: ' + (data.error || 'Unknown error'));
+            showActionError('Error unlinking data element', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error unlinking data element: ' + error.message);
-        console.error('Error unlinking data element:', error);
+        showActionError('Error unlinking data element', error);
     });
 }
 
@@ -400,23 +411,16 @@ function disconnectI14YDataset() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Dataset disconnected from I14Y.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Dataset disconnected from I14Y.');
             
             // Reload the graph
             loadGraphWithD3();
         } else {
-            alert('Error disconnecting dataset: ' + (data.error || 'Unknown error'));
+            showActionError('Error disconnecting dataset', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error disconnecting dataset: ' + error.message);
-        console.error('Error disconnecting dataset:', error);
+        showActionError('Error disconnecting dataset', error);
     });
 }
 
@@ -438,24 +442,17 @@ function disconnectI14YConcept() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Concept disconnected from I14Y.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Concept disconnected from I14Y.');
             
             // Reload the graph and node details
             loadGraphWithD3();
             loadNodeDetails(window.selectedNodeId);
         } else {
-            alert('Error disconnecting concept: ' + (data.error || 'Unknown error'));
+            showActionError('Error disconnecting concept', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error disconnecting concept: ' + error.message);
-        console.error('Error disconnecting concept:', error);
+        showActionError('Error disconnecting concept', error);
     });
 }
 
@@ -494,23 +491,16 @@ function applyConstraints() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Constraints applied.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Constraints applied.');
             
             // Reload the graph to show updated information
             loadGraphWithD3();
         } else {
-            alert('Error applying constraints: ' + (data.error || 'Unknown error'));
+            showActionError('Error applying constraints', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error applying constraints: ' + error.message);
-        console.error('Error applying constraints:', error);
+        showActionError('Error applying constraints', error);
     });
 }
 
@@ -540,25 +530,18 @@ function applyOrder() {
     .then(data => {
         console.log('Order update response:', data);
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Order updated.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Order updated.');
             
             // Reload node details to reflect the change (keep selection)
             loadNodeDetails(window.selectedNodeId);
             // Also reload graph to update visualization
             loadGraphWithD3();
         } else {
-            alert('Error updating order: ' + (data.error || 'Unknown error'));
+            showActionError('Error updating order', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error updating order: ' + error.message);
-        console.error('Error updating order:', error);
+        showActionError('Error updating order', error);
     });
 }
 
@@ -579,23 +562,16 @@ function confirmConvertToDataset() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // Show success message
-            const status = document.getElementById('selection-status');
-            if (status) {
-                status.style.display = 'block';
-                status.innerHTML = '<small><strong>Success:</strong> Class converted to dataset.</small>';
-                setTimeout(() => { status.style.display = 'none'; }, 3000);
-            }
+            showSuccessStatus('Class converted to dataset.');
             
             // Reload the graph to show updated information
             loadGraphWithD3();
         } else {
-            alert('Error converting class to dataset: ' + (data.error || 'Unknown error'));
+            showActionError('Error converting class to dataset', getApiErrorMessage(data));
         }
     })
     .catch(error => {
-        alert('Error converting class to dataset: ' + error.message);
-        console.error('Error converting class to dataset:', error);
+        showActionError('Error converting class to dataset', error);
     });
 }
 
