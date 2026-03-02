@@ -277,8 +277,12 @@ class CSVToSHACL:
             bool: Success status
         """
         try:
-            # Use StringIO to work with the CSV data in memory
-            f = io.StringIO(csv_data)
+            # Use StringIO to work with the CSV data in memory.
+            # newline='' is required so the csv module handles \r\n, \r and \n
+            # itself; without it, embedded bare \r in quoted fields (common in
+            # ISO-8859-1 exports) triggers "new-line character seen in unquoted
+            # field" errors.
+            f = io.StringIO(csv_data, newline='')
             
             # Read first line to detect delimiter
             first_line = f.readline()
