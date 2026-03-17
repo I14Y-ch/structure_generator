@@ -226,7 +226,10 @@ class CSVToSHACL:
     
     def _add_property_shape(self, node_shape: URIRef, property_name: str, property_type: URIRef, values: List[str], order: int, suggested_pattern: Optional[str], suggested_in_values: Optional[List[str]] = None, suggested_min_length: Optional[int] = None, suggested_max_length: Optional[int] = None) -> None:
         """Add a property shape to the graph."""
-        safe_name = property_name.replace(' ', '_').replace('.', '_')
+        # Replace any character that is not a URI-safe unreserved character with '_'
+        safe_name = re.sub(r'[^A-Za-z0-9\-._~]', '_', property_name)
+        # Collapse consecutive underscores and strip leading/trailing underscores
+        safe_name = re.sub(r'_+', '_', safe_name).strip('_')
         prop_uri = URIRef(f"{node_shape}/{safe_name}")
         
         self.g.add((prop_uri, RDF.type, SH.PropertyShape))

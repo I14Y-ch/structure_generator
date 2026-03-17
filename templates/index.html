@@ -160,6 +160,12 @@
                             <input type="file" id="csv-file" accept=".csv" style="display: none;" onchange="showCSVImportModal(this)">
                             <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('csv-file').click()">Import CSV</button>
                         </div>
+
+                        <!-- Excel Import -->
+                        <div class="mb-2">
+                            <input type="file" id="excel-file" accept=".xlsx,.xls" style="display: none;" onchange="showExcelImportModal(this)">
+                            <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('excel-file').click()">Import Excel</button>
+                        </div>
                         
                         <!-- XSD Import -->
                         <div class="mb-3">
@@ -371,6 +377,11 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
+                        <label for="data-element-identifier" class="form-label">Identifier:</label>
+                        <input type="text" class="form-control" id="data-element-identifier" placeholder="e.g. my_field_name" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
+                        <div class="form-text">Optional unique identifier (letters, numbers, hyphens, underscores only)</div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Title (Multilingual):</label>
                         <ul class="nav nav-tabs" id="data-element-title-tabs" role="tablist">
                             <li class="nav-item" role="presentation">
@@ -407,9 +418,35 @@
                         <div class="form-text">The title used for this data element in different languages</div>
                     </div>
                     <div class="mb-3">
-                        <label for="data-element-description" class="form-label">Description:</label>
-                        <textarea class="form-control" id="data-element-description" rows="3"
-                                  placeholder="Description of this data element"></textarea>
+                        <label class="form-label">Description (Multilingual):</label>
+                        <ul class="nav nav-tabs" id="data-element-description-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="data-element-desc-de-tab" data-bs-toggle="tab" data-bs-target="#data-element-de-description" type="button" role="tab" aria-controls="data-element-de-description" aria-selected="true">DE</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-element-desc-fr-tab" data-bs-toggle="tab" data-bs-target="#data-element-fr-description" type="button" role="tab" aria-controls="data-element-fr-description" aria-selected="false">FR</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-element-desc-it-tab" data-bs-toggle="tab" data-bs-target="#data-element-it-description" type="button" role="tab" aria-controls="data-element-it-description" aria-selected="false">IT</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="data-element-desc-en-tab" data-bs-toggle="tab" data-bs-target="#data-element-en-description" type="button" role="tab" aria-controls="data-element-en-description" aria-selected="false">EN</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="data-element-description-tab-content">
+                            <div class="tab-pane fade show active" id="data-element-de-description" role="tabpanel" aria-labelledby="data-element-desc-de-tab">
+                                <textarea class="form-control mt-2" id="data-element-description-de" rows="3" placeholder="German description"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="data-element-fr-description" role="tabpanel" aria-labelledby="data-element-desc-fr-tab">
+                                <textarea class="form-control mt-2" id="data-element-description-fr" rows="3" placeholder="French description"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="data-element-it-description" role="tabpanel" aria-labelledby="data-element-desc-it-tab">
+                                <textarea class="form-control mt-2" id="data-element-description-it" rows="3" placeholder="Italian description"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="data-element-en-description" role="tabpanel" aria-labelledby="data-element-desc-en-tab">
+                                <textarea class="form-control mt-2" id="data-element-description-en" rows="3" placeholder="English description"></textarea>
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Link to I14Y Concept (optional):</label>
@@ -449,8 +486,40 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="class-title" class="form-label">Title:</label>
-                        <input type="text" class="form-control" id="class-title" required>
+                        <label for="class-identifier" class="form-label">Identifier:</label>
+                        <input type="text" class="form-control" id="class-identifier" placeholder="e.g. my_class_name" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
+                        <div class="form-text">Optional unique identifier (letters, numbers, hyphens, underscores only)</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Title (Multilingual):</label>
+                        <ul class="nav nav-tabs" id="class-title-tabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="class-title-de-tab" data-bs-toggle="tab" data-bs-target="#class-de-title" type="button" role="tab" aria-controls="class-de-title" aria-selected="true">DE</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="class-title-fr-tab" data-bs-toggle="tab" data-bs-target="#class-fr-title" type="button" role="tab" aria-controls="class-fr-title" aria-selected="false">FR</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="class-title-it-tab" data-bs-toggle="tab" data-bs-target="#class-it-title" type="button" role="tab" aria-controls="class-it-title" aria-selected="false">IT</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="class-title-en-tab" data-bs-toggle="tab" data-bs-target="#class-en-title" type="button" role="tab" aria-controls="class-en-title" aria-selected="false">EN</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="class-title-tab-content">
+                            <div class="tab-pane fade show active" id="class-de-title" role="tabpanel" aria-labelledby="class-title-de-tab">
+                                <input type="text" class="form-control mt-2" id="class-title-de" required placeholder="German title">
+                            </div>
+                            <div class="tab-pane fade" id="class-fr-title" role="tabpanel" aria-labelledby="class-title-fr-tab">
+                                <input type="text" class="form-control mt-2" id="class-title-fr" placeholder="French title">
+                            </div>
+                            <div class="tab-pane fade" id="class-it-title" role="tabpanel" aria-labelledby="class-title-it-tab">
+                                <input type="text" class="form-control mt-2" id="class-title-it" placeholder="Italian title">
+                            </div>
+                            <div class="tab-pane fade" id="class-en-title" role="tabpanel" aria-labelledby="class-title-en-tab">
+                                <input type="text" class="form-control mt-2" id="class-title-en" placeholder="English title">
+                            </div>
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Description (Multilingual):</label>
@@ -621,6 +690,49 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="importCSV()">Import</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Excel Import Modal -->
+    <div class="modal fade" id="excelImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Import Excel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="excel-dataset-name" class="form-label">Dataset Name:</label>
+                        <input type="text" class="form-control" id="excel-dataset-name" value="Imported Dataset">
+                        <div class="form-text">This will be the title of your dataset</div>
+                    </div>
+                    <div class="mb-3" id="excel-sheet-row">
+                        <label for="excel-sheet" class="form-label">Sheet:</label>
+                        <select class="form-select" id="excel-sheet"></select>
+                        <div class="form-text">Select the sheet to import</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="excel-lang" class="form-label">Default Language:</label>
+                        <select class="form-select" id="excel-lang">
+                            <option value="de">German (de)</option>
+                            <option value="fr">French (fr)</option>
+                            <option value="it">Italian (it)</option>
+                            <option value="en">English (en)</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>
+                            <strong>Note:</strong> The first row of the selected sheet is expected to contain column headers.
+                            Column data types (text, numbers, dates, etc.) will be detected automatically.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="importExcel()">Import</button>
                 </div>
             </div>
         </div>
@@ -1125,6 +1237,13 @@
                         mainInfo = `
                             <strong>Type:</strong> ${node.type}<br>
                             <div class="mb-3 mt-3">
+                                <label for="edit-dataset-identifier" class="form-label small">Identifier:</label>
+                                <input type="text" class="form-control form-control-sm" id="edit-dataset-identifier" value="${escapeHtml(node.identifier || '')}" ${isLinked ? 'readonly' : ''} placeholder="Dataset identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+                                ${isLinked ? '' : '<div class="form-text">Unique identifier for this dataset (letters, numbers, hyphens, underscores only)</div>'}
+                                ${isLinked ? '<small class="text-muted">Identifier is managed on I14Y</small>' : ''}
+                                ${isLinked && node.i14y_id ? `<small class="text-muted d-block">GUID: ${escapeHtml(node.i14y_id)}</small>` : ''}
+                            </div>
+                            <div class="mb-3 mt-3">
                                 <label class="form-label small">Title:</label>
                                 <ul class="nav nav-tabs" id="dataset-title-tabs" role="tablist">
                                     <li class="nav-item" role="presentation">
@@ -1188,13 +1307,6 @@
                                 </div>
                                 ${isLinked ? '<small class="text-muted">Description is managed on I14Y</small>' : ''}
                             </div>
-                            <div class="mb-3">
-                                <label for="edit-dataset-identifier" class="form-label small">Identifier:</label>
-                                <input type="text" class="form-control form-control-sm" id="edit-dataset-identifier" value="${escapeHtml(node.identifier || '')}" ${isLinked ? 'readonly' : ''} placeholder="Dataset identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
-                                ${isLinked ? '' : '<div class="form-text">Unique identifier for this dataset (letters, numbers, hyphens, underscores only)</div>'}
-                                ${isLinked ? '<small class="text-muted">Identifier is managed on I14Y</small>' : ''}
-                                ${isLinked && node.i14y_id ? `<small class="text-muted d-block">GUID: ${escapeHtml(node.i14y_id)}</small>` : ''}
-                            </div>
                             ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
                             ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100 mb-2" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
                             ${i14yDatasetInfo}
@@ -1208,8 +1320,40 @@
                         if (!isI14YLinked) {
                             classEditableFields = `
                                 <div class="mb-3 mt-3">
-                                    <label for="edit-node-title" class="form-label small">Title:</label>
-                                    <input type="text" class="form-control form-control-sm" id="edit-node-title" value="${node.title}">
+                                    <label for="edit-class-identifier" class="form-label small">Identifier:</label>
+                                    <input type="text" class="form-control form-control-sm" id="edit-class-identifier" value="${escapeHtml(node.identifier || '')}" placeholder="e.g. my_class_name" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
+                                    <div class="form-text">Unique identifier (letters, numbers, hyphens, underscores only)</div>
+                                </div>
+                                <div class="mb-3 mt-3">
+                                    <label class="form-label small">Title (Multilingual):</label>
+                                    <ul class="nav nav-tabs" id="class-edit-title-tabs" role="tablist">
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link active" id="class-edit-title-de-tab" data-bs-toggle="tab" data-bs-target="#class-edit-de-title" type="button" role="tab" aria-controls="class-edit-de-title" aria-selected="true">DE</button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link" id="class-edit-title-fr-tab" data-bs-toggle="tab" data-bs-target="#class-edit-fr-title" type="button" role="tab" aria-controls="class-edit-fr-title" aria-selected="false">FR</button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link" id="class-edit-title-it-tab" data-bs-toggle="tab" data-bs-target="#class-edit-it-title" type="button" role="tab" aria-controls="class-edit-it-title" aria-selected="false">IT</button>
+                                        </li>
+                                        <li class="nav-item" role="presentation">
+                                            <button class="nav-link" id="class-edit-title-en-tab" data-bs-toggle="tab" data-bs-target="#class-edit-en-title" type="button" role="tab" aria-controls="class-edit-en-title" aria-selected="false">EN</button>
+                                        </li>
+                                    </ul>
+                                    <div class="tab-content" id="class-edit-title-tab-content">
+                                        <div class="tab-pane fade show active" id="class-edit-de-title" role="tabpanel" aria-labelledby="class-edit-title-de-tab">
+                                            <input type="text" class="form-control form-control-sm mt-2" id="edit-class-title-de" value="${escapeHtml(getLanguageText(node.title, 'de'))}" placeholder="German title">
+                                        </div>
+                                        <div class="tab-pane fade" id="class-edit-fr-title" role="tabpanel" aria-labelledby="class-edit-title-fr-tab">
+                                            <input type="text" class="form-control form-control-sm mt-2" id="edit-class-title-fr" value="${escapeHtml(getLanguageText(node.title, 'fr'))}" placeholder="French title">
+                                        </div>
+                                        <div class="tab-pane fade" id="class-edit-it-title" role="tabpanel" aria-labelledby="class-edit-title-it-tab">
+                                            <input type="text" class="form-control form-control-sm mt-2" id="edit-class-title-it" value="${escapeHtml(getLanguageText(node.title, 'it'))}" placeholder="Italian title">
+                                        </div>
+                                        <div class="tab-pane fade" id="class-edit-en-title" role="tabpanel" aria-labelledby="class-edit-title-en-tab">
+                                            <input type="text" class="form-control form-control-sm mt-2" id="edit-class-title-en" value="${escapeHtml(getLanguageText(node.title, 'en'))}" placeholder="English title">
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label small">Description (Multilingual):</label>
@@ -1341,6 +1485,11 @@
                             <strong>Type:</strong> Data Element<br><br>
                             ${conceptDetails}
                             <div class="mb-3 mt-3">
+                                <label for="edit-data-element-identifier" class="form-label small">Identifier:</label>
+                                <input type="text" class="form-control form-control-sm" id="edit-data-element-identifier" value="${escapeHtml(node.identifier || node.local_name || getMultilingualText(node.title) || '')}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+                                <div class="form-text">Unique identifier for this data element (letters, numbers, hyphens, underscores only)</div>
+                            </div>
+                            <div class="mb-3 mt-3">
                                 <label class="form-label small">Title (Multilingual):</label>
                                 <ul class="nav nav-tabs" id="edit-data-element-title-tabs" role="tablist">
                                     <li class="nav-item" role="presentation">
@@ -1402,11 +1551,6 @@
                                         <textarea class="form-control form-control-sm mt-2" id="edit-data-element-description-en" rows="3" placeholder="English description">${escapeHtml(getLanguageText(node.description, 'en'))}</textarea>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <label for="edit-data-element-identifier" class="form-label small">Identifier:</label>
-                                <input type="text" class="form-control form-control-sm" id="edit-data-element-identifier" value="${escapeHtml(node.identifier || node.local_name || getMultilingualText(node.title) || '')}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
-                                <div class="form-text">Unique identifier for this data element (letters, numbers, hyphens, underscores only)</div>
                             </div>
                             <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDataElementInfo()">Update Data Element</button>
                             ${conceptLinkInfo}

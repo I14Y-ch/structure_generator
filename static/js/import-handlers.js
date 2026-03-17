@@ -199,6 +199,102 @@ window.importCSV = importCSV;
 window.showXSDImportModal = showXSDImportModal;
 window.importXSD = importXSD;
 
+// ---- Excel Import ----
+
+let excelFileForImport = null;
+
+function showExcelImportModal(fileInput) {
+    if (!fileInput.files || fileInput.files.length === 0) {
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+        alert('Please select an Excel file (.xlsx or .xls)');
+        fileInput.value = '';
+        return;
+    }
+
+    excelFileForImport = file;
+
+    // Pre-fill dataset name from filename
+    const basename = file.name.replace(/\.(xlsx|xls)$/i, '');
+    document.getElementById('excel-dataset-name').value = basename || IMPORT_DEFAULT_DATASET_NAME;
+
+    // Fetch sheet names from the server
+    document.body.classList.add('loading');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/import/excel/sheets', { method: 'POST', body: formData })
+        .then(async response => {
+            let data;
+            try { data = await response.json(); } catch (e) { throw new Error('Invalid server response'); }
+            if (!response.ok || !data.success) throw new Error(data.error || 'Unknown error');
+            return data;
+        })
+        .then(data => {
+            const sheets = data.sheets;
+            const select = document.getElementById('excel-sheet');
+            select.innerHTML = '';
+            sheets.forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                select.appendChild(opt);
+            });
+
+            // Only show the sheet row when there are multiple sheets
+            document.getElementById('excel-sheet-row').style.display = sheets.length > 1 ? '' : 'none';
+
+            new bootstrap.Modal(document.getElementById('excelImportModal')).show();
+        })
+        .catch(err => {
+            showActionError('Error reading Excel file', err);
+            excelFileForImport = null;
+            fileInput.value = '';
+        })
+        .finally(() => {
+            document.body.classList.remove('loading');
+        });
+}
+
+function importExcel() {
+    if (!excelFileForImport) {
+        alert(IMPORT_ERROR_NO_FILE);
+        return;
+    }
+
+    const datasetName = getRequiredValue('excel-dataset-name', IMPORT_ERROR_DATASET_REQUIRED);
+    if (!datasetName) return;
+
+    const sheet = document.getElementById('excel-sheet').value;
+    const lang = document.getElementById('excel-lang').value;
+
+    const formData = new FormData();
+    formData.append('file', excelFileForImport);
+    formData.append('dataset_name', datasetName);
+    formData.append('sheet', sheet);
+    formData.append('lang', lang);
+
+    runImportRequest({
+        url: '/api/import/excel',
+        formData,
+        modalId: 'excelImportModal',
+        successHtml: '<small><strong>Success:</strong> Excel file imported.</small>',
+        resetFormFields: () => {
+            document.getElementById('excel-dataset-name').value = IMPORT_DEFAULT_DATASET_NAME;
+            document.getElementById('excel-lang').value = 'de';
+            excelFileForImport = null;
+            document.getElementById('excel-file').value = '';
+        },
+        errorLabel: 'Error importing Excel'
+    });
+}
+
+window.showExcelImportModal = showExcelImportModal;
+window.importExcel = importExcel;
+
 // Update dataset information
 function updateDatasetInfo() {
     // Collect multilingual titles
@@ -317,38 +413,47 @@ function updateNodeInfo() {
         return;
     }
 
-    const title = document.getElementById('edit-node-title').value;
-    
-    // Check if we're editing a class with multilingual descriptions
-    const classDescDe = document.getElementById('edit-class-description-de');
-    let description;
-    
-    if (classDescDe) {
-        // Class node with multilingual descriptions
+    // Check if we're editing a class node (has multilingual title fields)
+    const classTitleDe = document.getElementById('edit-class-title-de');
+    let title, description, identifier;
+
+    if (classTitleDe) {
+        // Class node with multilingual title + identifier + multilingual description
+        title = {
+            de: classTitleDe.value,
+            fr: document.getElementById('edit-class-title-fr').value,
+            it: document.getElementById('edit-class-title-it').value,
+            en: document.getElementById('edit-class-title-en').value
+        };
+        identifier = (document.getElementById('edit-class-identifier')?.value || '').trim();
         description = {
-            de: classDescDe.value,
+            de: document.getElementById('edit-class-description-de').value,
             fr: document.getElementById('edit-class-description-fr').value,
             it: document.getElementById('edit-class-description-it').value,
             en: document.getElementById('edit-class-description-en').value
         };
+        if (!title.de && !title.fr && !title.it && !title.en) {
+            alert('At least one title is required');
+            return;
+        }
     } else {
-        // Fallback to single-language description for other node types or legacy data
+        // Concept or other node type with single-language title
+        title = document.getElementById('edit-node-title').value;
+        if (!title) {
+            alert('Title is required');
+            return;
+        }
         const descField = document.getElementById('edit-node-description');
         description = descField ? descField.value : '';
     }
 
-    if (!title) {
-        alert('Title is required');
-        return;
-    }
+    const payload = { title: title, description: description };
+    if (identifier) payload.identifier = identifier;
 
     fetch(`/api/nodes/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            title: title,
-            description: description
-        })
+        body: JSON.stringify(payload)
     })
     .then(response => response.json())
     .then(data => {

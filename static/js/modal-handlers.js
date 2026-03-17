@@ -4,7 +4,11 @@
 // Show Add Class Modal
 function showAddClassModal() {
     // Clear previous values
-    document.getElementById('class-title').value = '';
+    document.getElementById('class-title-de').value = '';
+    document.getElementById('class-title-fr').value = '';
+    document.getElementById('class-title-it').value = '';
+    document.getElementById('class-title-en').value = '';
+    document.getElementById('class-identifier').value = '';
     document.getElementById('class-description-de').value = '';
     document.getElementById('class-description-fr').value = '';
     document.getElementById('class-description-it').value = '';
@@ -16,33 +20,45 @@ function showAddClassModal() {
 
 // Add Class from Modal
 function addClass() {
-    const title = document.getElementById('class-title').value;
-    const descriptionDe = document.getElementById('class-description-de').value;
-    const descriptionFr = document.getElementById('class-description-fr').value;
-    const descriptionIt = document.getElementById('class-description-it').value;
-    const descriptionEn = document.getElementById('class-description-en').value;
+    const titleDe = document.getElementById('class-title-de').value;
+    const titleFr = document.getElementById('class-title-fr').value;
+    const titleIt = document.getElementById('class-title-it').value;
+    const titleEn = document.getElementById('class-title-en').value;
 
-    if (!title) {
-        alert('Title is required');
+    if (!titleDe && !titleFr && !titleIt && !titleEn) {
+        alert('At least one title is required');
         return;
     }
 
+    // Build multilingual title object
+    const title = {
+        de: titleDe,
+        fr: titleFr,
+        it: titleIt,
+        en: titleEn
+    };
+
+    const identifier = document.getElementById('class-identifier').value.trim();
+
     // Build multilingual description object
     const description = {
-        de: descriptionDe,
-        fr: descriptionFr,
-        it: descriptionIt,
-        en: descriptionEn
+        de: document.getElementById('class-description-de').value,
+        fr: document.getElementById('class-description-fr').value,
+        it: document.getElementById('class-description-it').value,
+        en: document.getElementById('class-description-en').value
     };
+
+    const payload = {
+        type: 'class',
+        title: title,
+        description: description
+    };
+    if (identifier) payload.identifier = identifier;
 
     fetch('/api/nodes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            type: 'class',
-            title: title,
-            description: description
-        })
+        body: JSON.stringify(payload)
     })
     .then(response => response.json())
     .then(data => {
@@ -51,7 +67,11 @@ function addClass() {
             bootstrap.Modal.getInstance(document.getElementById('addClassModal')).hide();
             
             // Clear form fields
-            document.getElementById('class-title').value = '';
+            document.getElementById('class-title-de').value = '';
+            document.getElementById('class-title-fr').value = '';
+            document.getElementById('class-title-it').value = '';
+            document.getElementById('class-title-en').value = '';
+            document.getElementById('class-identifier').value = '';
             document.getElementById('class-description-de').value = '';
             document.getElementById('class-description-fr').value = '';
             document.getElementById('class-description-it').value = '';
@@ -79,7 +99,11 @@ function showAddDataElementModal() {
     document.getElementById('data-element-title-fr').value = '';
     document.getElementById('data-element-title-it').value = '';
     document.getElementById('data-element-title-en').value = '';
-    document.getElementById('data-element-description').value = '';
+    document.getElementById('data-element-description-de').value = '';
+    document.getElementById('data-element-description-fr').value = '';
+    document.getElementById('data-element-description-it').value = '';
+    document.getElementById('data-element-description-en').value = '';
+    document.getElementById('data-element-identifier').value = '';
     document.getElementById('data-element-concept-search').value = '';
     document.getElementById('data-element-concept-results').style.display = 'none';
     document.getElementById('data-element-selected-concept').style.display = 'none';
@@ -173,7 +197,6 @@ function addDataElement() {
     const titleFr = document.getElementById('data-element-title-fr').value;
     const titleIt = document.getElementById('data-element-title-it').value;
     const titleEn = document.getElementById('data-element-title-en').value;
-    const description = document.getElementById('data-element-description').value;
 
     if (!titleDe && !titleFr && !titleIt && !titleEn) {
         alert('At least one title is required');
@@ -191,6 +214,16 @@ function addDataElement() {
     // Use the first available title as local_name (prioritize German, then English, then others)
     const local_name = titleDe || titleEn || titleFr || titleIt;
 
+    // Build multilingual description object
+    const description = {
+        de: document.getElementById('data-element-description-de').value,
+        fr: document.getElementById('data-element-description-fr').value,
+        it: document.getElementById('data-element-description-it').value,
+        en: document.getElementById('data-element-description-en').value
+    };
+
+    const identifier = document.getElementById('data-element-identifier').value.trim();
+
     // Determine if a class is selected as parent
     let parentId = null;
     if (selectedNode) {
@@ -207,6 +240,7 @@ function addDataElement() {
             description: description,
             parent_id: parentId
         };
+        if (identifier) payload.identifier = identifier;
 
         // If a concept is selected, include it
         if (selectedConceptForDataElement) {
@@ -241,6 +275,7 @@ function addDataElement() {
             local_name: local_name,
             description: description
         };
+        if (identifier) payload.identifier = identifier;
 
         // If a concept is selected, include it
         if (selectedConceptForDataElement) {

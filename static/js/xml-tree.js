@@ -75,12 +75,14 @@ function convertToTreeData(graphData) {
     
     console.log('Root nodes found:', rootNodes.length, rootNodes.map(n => ({id: n.id, type: n.type, label: n.label})));
     
-    // If we have multiple root nodes, prioritize dataset
+    // If we have multiple root nodes (e.g. after a node is detached),
+    // keep all of them but sort so dataset comes first.
     if (rootNodes.length > 1) {
-        const datasetNode = rootNodes.find(node => node.type === 'dataset');
-        if (datasetNode) {
-            rootNodes = [datasetNode];
-        }
+        rootNodes.sort((a, b) => {
+            if (a.type === 'dataset') return -1;
+            if (b.type === 'dataset') return 1;
+            return 0;
+        });
     }
     
     // If no root found, pick the first dataset or the first node

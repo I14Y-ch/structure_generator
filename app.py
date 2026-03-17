@@ -2999,6 +2999,8 @@ class FlaskSHACLGraphEditor:
             node.node_reference = node_data['node_reference'] if node_data['node_reference'] else None
         if 'range' in node_data:
             node.range = node_data['range'] if node_data['range'] else None
+        if 'identifier' in node_data:
+            node.identifier = node_data['identifier'] if node_data['identifier'] else None
         if 'local_name' in node_data:
             node.local_name = node_data['local_name'] if node_data['local_name'] else None
         if 'order' in node_data:
@@ -3643,6 +3645,7 @@ def create_data_element():
     local_name = data.get('local_name')
     parent_id = data.get('parent_id')
     standalone = data.get('standalone', False)
+    identifier = data.get('identifier')
     
     if not local_name:
         return jsonify({"error": "Local name is required"}), 400
@@ -3699,9 +3702,21 @@ def create_data_element():
                     data_element.description = data.get('description', '')
             else:
                 # No concept data - use provided description or empty
-                data_element.description = data.get('description', '')
+                raw_desc = data.get('description', '')
+                if isinstance(raw_desc, dict):
+                    data_element.description = raw_desc
+                else:
+                    data_element.description = {'de': raw_desc} if raw_desc else {}
                 
             data_element.datatype = data.get('datatype', 'xsd:string')
+        
+        if identifier:
+            data_element.identifier = identifier
+        
+        # Handle multilingual title when passed as dict
+        title_data = data.get('title')
+        if isinstance(title_data, dict):
+            data_element.title = title_data
         
         # Add to editor
         editor.nodes[data_element.id] = data_element
@@ -3967,11 +3982,14 @@ def add_node():
     description = data.get('description', '')
     parent_id = data.get('parent_id')
     
+    identifier = data.get('identifier')
     if not node_type or not title:
         return jsonify({"error": "Node type and title are required"}), 400
     
     # Create the node
     node = SHACLNode(node_type, title=title, description=description)
+    if identifier:
+        node.identifier = identifier
     editor.nodes[node.id] = node
     
     # Connect to parent if specified
@@ -5674,6 +5692,136 @@ def import_example_ttl():
         print(f"Error importing example TTL: {str(e)}")
         return jsonify({"error": "Failed to import example TTL"}), 500
 
+def _process_csv_ttl_import(editor, ttl: str, source_filename: str, dataset_name: str):
+    """Parse a CSV-generated TTL string and populate the editor with the resulting nodes."""
+    g = Graph()
+    g.parse(data=ttl, format='turtle')
+    SUG = Namespace("https://www.i14y.admin.ch/vocab#")
+
+    editor.reset_structure()
+
+    dataset_node = None
+    for node in editor.nodes.values():
+        if node.type == 'dataset':
+            dataset_node = node
+            break
+
+    if not dataset_node:
+        dataset_node = SHACLNode('dataset', title=dataset_name)
+        editor.nodes[dataset_node.id] = dataset_node
+
+    dataset_node.title = dataset_name
+    dataset_node.description = f"Dataset imported from {source_filename}"
+
+    property_shapes = [s for s, _, _ in g.triples((None, RDF.type, SH.PropertyShape))]
+
+    for shape in property_shapes:
+        prop_name = None
+        for _, _, name in g.triples((shape, SH.name, None)):
+            prop_name = str(name)
+            break
+        if not prop_name:
+            prop_name = str(shape).split('/')[-1]
+
+        datatype = None
+        for _, _, dt in g.triples((shape, SH.datatype, None)):
+            datatype = str(dt)
+            break
+
+        data_element_node = SHACLNode('data_element', title=prop_name)
+        data_element_node.local_name = prop_name
+        data_element_node.identifier = prop_name
+        data_element_node.datatype = datatype or "xsd:string"
+
+        for _, _, value in g.triples((shape, SH.order, None)):
+            try:
+                data_element_node.order = int(value)
+            except (ValueError, TypeError):
+                pass
+            break
+
+        for _, _, value in g.triples((shape, SUG.suggestedPattern, None)):
+            data_element_node.suggested_pattern = str(value)
+            break
+
+        for _, _, value in g.triples((shape, SUG.suggestedInValues, None)):
+            try:
+                suggested_values = json.loads(str(value))
+                data_element_node.suggested_in_values = sort_enumeration_values(suggested_values) if isinstance(suggested_values, list) else suggested_values
+            except (ValueError, json.JSONDecodeError):
+                pass
+            break
+
+        for _, _, value in g.triples((shape, SUG.suggestedMinLength, None)):
+            try:
+                data_element_node.suggested_min_length = int(value)
+            except (ValueError, TypeError):
+                pass
+            break
+
+        for _, _, value in g.triples((shape, SUG.suggestedMaxLength, None)):
+            try:
+                data_element_node.suggested_max_length = int(value)
+            except (ValueError, TypeError):
+                pass
+            break
+
+        editor.nodes[data_element_node.id] = data_element_node
+        dataset_node.connections.add(data_element_node.id)
+        data_element_node.connections.add(dataset_node.id)
+
+        edge_id = f"{dataset_node.id}_{data_element_node.id}"
+        editor.edges[edge_id] = {
+            "id": edge_id,
+            "from": dataset_node.id,
+            "to": data_element_node.id,
+            "cardinality": "0..1"
+        }
+
+        for _, _, value in g.triples((shape, SH.minCount, None)):
+            try:
+                data_element_node.min_count = int(value)
+            except (ValueError, TypeError):
+                pass
+
+        for _, _, value in g.triples((shape, SH.maxCount, None)):
+            try:
+                data_element_node.max_count = int(value)
+            except (ValueError, TypeError):
+                pass
+
+        for _, _, value in g.triples((shape, SH.minLength, None)):
+            try:
+                data_element_node.min_length = int(value)
+            except (ValueError, TypeError):
+                pass
+
+        for _, _, value in g.triples((shape, SH.maxLength, None)):
+            try:
+                data_element_node.max_length = int(value)
+            except (ValueError, TypeError):
+                pass
+
+        for _, _, value in g.triples((shape, SH.pattern, None)):
+            data_element_node.pattern = str(value)
+
+        for _, _, in_list in g.triples((shape, SH['in'], None)):
+            values_list = []
+            current = in_list
+            while current != RDF.nil:
+                for _, _, first_value in g.triples((current, RDF.first, None)):
+                    values_list.append(str(first_value))
+                rest_items = list(g.triples((current, RDF.rest, None)))
+                if rest_items:
+                    current = rest_items[0][2]
+                else:
+                    break
+            if values_list:
+                data_element_node.in_values = values_list
+
+    print(f"Successfully processed TTL. Created {len(property_shapes)} data element nodes.")
+
+
 def detect_and_decode_csv(file_content: bytes, encoding: str = 'auto') -> tuple[str, str]:
     """
     Detect and decode CSV file content with the specified encoding.
@@ -5782,186 +5930,9 @@ def import_csv():
         try:
             with open('/tmp/csv_import.log', 'a') as f:
                 f.write("Starting TTL processing...\n")
-            # Use RDFLib to parse the TTL
-            g = Graph()
-            g.parse(data=ttl, format='turtle')
-            SUG = Namespace("https://www.i14y.admin.ch/vocab#")
+            _process_csv_ttl_import(editor, ttl, file.filename, dataset_name)
             with open('/tmp/csv_import.log', 'a') as f:
-                f.write("TTL parsed successfully\n")
-            
-            # Reset full structure for a clean import session
-            editor.reset_structure()
-
-            # Get the freshly created dataset node and apply import metadata
-            dataset_node = None
-            for node in editor.nodes.values():
-                if node.type == 'dataset':
-                    dataset_node = node
-                    break
-
-            if not dataset_node:
-                dataset_node = SHACLNode('dataset', title=dataset_name)
-                editor.nodes[dataset_node.id] = dataset_node
-
-            dataset_node.title = dataset_name
-            dataset_node.description = f"Dataset imported from {file.filename}"
-            
-            print(f"Using dataset node: {dataset_node.id} with title: {dataset_node.title}")
-            
-            # Find property shapes in the TTL
-            # We're looking for triples with rdf:type sh:PropertyShape
-            property_shapes = []
-            for s, p, o in g.triples((None, RDF.type, SH.PropertyShape)):
-                property_shapes.append(s)
-                with open('/tmp/csv_import.log', 'a') as f:
-                    f.write(f"Found PropertyShape: {s}\n")
-            
-            with open('/tmp/csv_import.log', 'a') as f:
-                f.write(f"Found {len(property_shapes)} property shapes in TTL\n")
-            
-            # Process each property shape
-            for prop_idx, shape in enumerate(property_shapes):
-                with open('/tmp/csv_import.log', 'a') as f:
-                    f.write(f"Processing property shape {prop_idx + 1}/{len(property_shapes)}: {shape}\n")
-                
-                # Get property name (from sh:name or the URI)
-                prop_name = None
-                for _, _, name in g.triples((shape, SH.name, None)):
-                    prop_name = str(name)
-                    break
-                
-                if not prop_name:
-                    # Extract from URI
-                    prop_name = str(shape).split('/')[-1]
-                
-                with open('/tmp/csv_import.log', 'a') as f:
-                    f.write(f"Property name: {prop_name}\n")
-                
-                # Get datatype
-                datatype = None
-                for _, _, dt in g.triples((shape, SH.datatype, None)):
-                    datatype = str(dt)
-                    break
-                
-                with open('/tmp/csv_import.log', 'a') as f:
-                    f.write(f"Property datatype: {datatype}\n")
-                
-                # Create a data element node for this property
-                data_element_node = SHACLNode('data_element', title=prop_name)
-                data_element_node.local_name = prop_name
-                data_element_node.identifier = prop_name
-                data_element_node.datatype = datatype or "xsd:string"
-
-                for _, _, value in g.triples((shape, SH.order, None)):
-                    try:
-                        data_element_node.order = int(value)
-                    except (ValueError, TypeError):
-                        pass
-                    break
-
-                for _, _, value in g.triples((shape, SUG.suggestedPattern, None)):
-                    data_element_node.suggested_pattern = str(value)
-                    break
-                
-                # Extract suggested enumeration values
-                for _, _, value in g.triples((shape, SUG.suggestedInValues, None)):
-                    try:
-                        import json
-                        suggested_values = json.loads(str(value))
-                        # Sort the suggested values (numerically if all numeric, else alphabetically)
-                        data_element_node.suggested_in_values = sort_enumeration_values(suggested_values) if isinstance(suggested_values, list) else suggested_values
-                    except (ValueError, json.JSONDecodeError):
-                        pass
-                    break
-                
-                # Extract suggested min/max length
-                for _, _, value in g.triples((shape, SUG.suggestedMinLength, None)):
-                    try:
-                        data_element_node.suggested_min_length = int(value)
-                    except (ValueError, TypeError):
-                        pass
-                    break
-                
-                for _, _, value in g.triples((shape, SUG.suggestedMaxLength, None)):
-                    try:
-                        data_element_node.suggested_max_length = int(value)
-                    except (ValueError, TypeError):
-                        pass
-                    break
-                
-                # Add to nodes and connect to dataset
-                editor.nodes[data_element_node.id] = data_element_node
-                dataset_node.connections.add(data_element_node.id)
-                data_element_node.connections.add(dataset_node.id)
-                
-                # Create edge between dataset and data element
-                edge_id = f"{dataset_node.id}_{data_element_node.id}"
-                editor.edges[edge_id] = {
-                    "id": edge_id,
-                    "from": dataset_node.id,
-                    "to": data_element_node.id,
-                    "cardinality": "0..1"  # Default cardinality
-                }
-                
-                with open('/tmp/csv_import.log', 'a') as f:
-                    f.write(f"Created data element node {data_element_node.id} for property {prop_name}\n")
-                    f.write(f"Current node count: {len(editor.nodes)}\n")
-                
-                # Extract constraints
-                # Min/Max Count
-                for _, _, value in g.triples((shape, SH.minCount, None)):
-                    try:
-                        data_element_node.min_count = int(value)
-                        print(f"Set min_count: {data_element_node.min_count}")
-                    except (ValueError, TypeError):
-                        pass
-                
-                for _, _, value in g.triples((shape, SH.maxCount, None)):
-                    try:
-                        data_element_node.max_count = int(value)
-                        print(f"Set max_count: {data_element_node.max_count}")
-                    except (ValueError, TypeError):
-                        pass
-                
-                # Min/Max Length
-                for _, _, value in g.triples((shape, SH.minLength, None)):
-                    try:
-                        data_element_node.min_length = int(value)
-                        print(f"Set min_length: {data_element_node.min_length}")
-                    except (ValueError, TypeError):
-                        pass
-                
-                for _, _, value in g.triples((shape, SH.maxLength, None)):
-                    try:
-                        data_element_node.max_length = int(value)
-                        print(f"Set max_length: {data_element_node.max_length}")
-                    except (ValueError, TypeError):
-                        pass
-                
-                # Pattern
-                for _, _, value in g.triples((shape, SH.pattern, None)):
-                    data_element_node.pattern = str(value)
-                    print(f"Set pattern: {data_element_node.pattern}")
-                
-                # Enumeration values (sh:in)
-                for _, _, in_list in g.triples((shape, SH['in'], None)):
-                    # Extract values from the RDF list
-                    values_list = []
-                    current = in_list
-                    while current != RDF.nil:
-                        for _, _, first_value in g.triples((current, RDF.first, None)):
-                            values_list.append(str(first_value))
-                        # Move to next item in list
-                        rest_items = list(g.triples((current, RDF.rest, None)))
-                        if rest_items:
-                            current = rest_items[0][2]
-                        else:
-                            break
-                    if values_list:
-                        data_element_node.in_values = values_list
-                        print(f"Set in_values: {data_element_node.in_values}")
-            
-            print(f"Successfully processed TTL. Created {len(property_shapes)} data element nodes.")
+                f.write("TTL processed successfully\n")
         except Exception as e:
             import traceback
             print(f"Error processing TTL: {str(e)}")
@@ -5975,6 +5946,84 @@ def import_csv():
         print(f"Error importing CSV: {str(e)}")
         print(traceback.format_exc())
         return jsonify({"error": "Failed to import CSV"}), 500
+
+@app.route('/api/import/excel/sheets', methods=['POST'])
+def import_excel_sheets():
+    """Return the list of sheet names from an uploaded Excel file"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({"error": "Only Excel files (.xlsx, .xls) are supported"}), 400
+
+        import openpyxl
+        file_content = file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
+        sheets = wb.sheetnames
+        wb.close()
+        return jsonify({"success": True, "sheets": sheets})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/import/excel', methods=['POST'])
+def import_excel():
+    """Import a sheet from an Excel file and convert it to SHACL TTL"""
+    editor = get_user_editor()
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({"error": "Only Excel files (.xlsx, .xls) are supported"}), 400
+
+        dataset_name = request.form.get('dataset_name', os.path.splitext(file.filename)[0])
+        lang = request.form.get('lang', 'de')
+        sheet_name = request.form.get('sheet', None)
+
+        import openpyxl
+        file_content = file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
+
+        if sheet_name and sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+        else:
+            ws = wb.active
+
+        # Convert the sheet to a CSV string
+        output = io.StringIO()
+        writer = csv.writer(output)
+        for row in ws.iter_rows(values_only=True):
+            writer.writerow(['' if v is None else str(v) for v in row])
+        csv_data = output.getvalue()
+        wb.close()
+
+        print(f"Importing Excel file: {file.filename}, sheet: {sheet_name}, dataset: {dataset_name}, lang: {lang}")
+
+        ttl = csv_to_ttl(csv_data, dataset_name, lang)
+        if not ttl:
+            return jsonify({"error": "Failed to convert Excel sheet to TTL"}), 500
+
+        try:
+            _process_csv_ttl_import(editor, ttl, file.filename, dataset_name)
+        except Exception as e:
+            import traceback
+            print(f"Error processing Excel TTL: {str(e)}")
+            traceback.print_exc()
+            # Continue with basic import even if advanced processing fails
+
+        return jsonify({"success": True})
+    except Exception as e:
+        import traceback
+        print(f"Error importing Excel: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({"error": "Failed to import Excel file"}), 500
+
 
 @app.route('/api/import/xsd', methods=['POST'])
 def import_xsd():
