@@ -16,7 +16,7 @@ function showSelectionStatus(html) {
 }
 
 function showSuccessStatus(message) {
-    showSelectionStatus(`<small><strong>Success:</strong> ${message}</small>`);
+    // Success is visible from the graph update; no status banner needed
 }
 
 function getApiErrorMessage(data) {

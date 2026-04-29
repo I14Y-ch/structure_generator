@@ -159,7 +159,7 @@ function createUmlElement(node, type, x, y) {
             element = new joint.shapes.uml.Class({
                 position: { x, y },
                 size: { width: 200, height: 60 },
-                name: node.title || node.label,
+                name: node.local_name || node.title || node.label,
                 attributes: [],
                 methods: [],
                 attrs: {
@@ -190,7 +190,7 @@ function createUmlElement(node, type, x, y) {
             element = new joint.shapes.uml.Class({
                 position: { x, y },
                 size: { width: 180, height: 60 },
-                name: node.title || node.label,
+                name: node.local_name || node.title || node.label,
                 attributes: [],
                 methods: [],
                 attrs: {
@@ -223,7 +223,7 @@ function createUmlElement(node, type, x, y) {
             element = new joint.shapes.uml.Class({
                 position: { x, y },
                 size: { width: 160, height: 40 },
-                name: node.title || node.label,
+                name: node.local_name || node.title || node.label,
                 attributes: [],
                 methods: [],
                 attrs: {

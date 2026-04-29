@@ -12,6 +12,7 @@ let selectedLink = null;
 let connectionMode = false;
 let pendingConnection = null;
 let zoom; // Zoom behavior
+let physicsEnabled = true; // Physics simulation toggle
 
 // Initialize the D3 visualization
 function initializeD3Visualization(containerId) {
@@ -144,6 +145,33 @@ function addZoomControls(containerId) {
     container.appendChild(zoomControls);
 }
 
+// Toggle physics simulation on/off
+function togglePhysics() {
+    physicsEnabled = !physicsEnabled;
+    const btn = document.getElementById('physics-toggle-btn');
+    if (physicsEnabled) {
+        simulation.alphaTarget(0.3).restart();
+        // Let it settle then stop
+        setTimeout(() => {
+            if (physicsEnabled) simulation.alphaTarget(0);
+        }, 2000);
+        if (btn) {
+            btn.textContent = 'Physics: ON';
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-outline-success');
+        }
+    } else {
+        simulation.stop();
+        if (btn) {
+            btn.textContent = 'Physics: OFF';
+            btn.classList.remove('btn-outline-success');
+            btn.classList.add('btn-outline-secondary');
+        }
+    }
+}
+
+window.togglePhysics = togglePhysics;
+
 // Load the graph data from the backend
 function loadGraphWithD3() {
     console.log('Loading graph data for D3 visualization');
@@ -206,6 +234,14 @@ function loadGraphWithD3() {
                 debugEl.innerHTML += '<div>D3 visualization initialized, rendering...</div>';
             }
             
+            // Snapshot current node positions so we can preserve them when physics is off
+            const currentPositionMap = new Map();
+            nodes.forEach(n => {
+                if (n.id && n.x != null && n.y != null) {
+                    currentPositionMap.set(n.id, { x: n.x, y: n.y, fx: n.fx, fy: n.fy });
+                }
+            });
+
             // Process the nodes
             nodes = data.nodes.map(node => {
                 // Assign colors based on node type
@@ -228,15 +264,27 @@ function loadGraphWithD3() {
                 
                 // Ensure nodes start within visible area
                 const margin = 50;
-                const x = margin + Math.random() * (width - 2 * margin);
-                const y = margin + Math.random() * (height - 2 * margin);
+                let x, y, fx, fy;
+                if (!physicsEnabled && currentPositionMap.has(node.id)) {
+                    // Physics is off: restore exact position so the graph doesn't move
+                    const saved = currentPositionMap.get(node.id);
+                    x = saved.x; y = saved.y;
+                    fx = saved.fx != null ? saved.fx : saved.x;
+                    fy = saved.fy != null ? saved.fy : saved.y;
+                } else {
+                    x = margin + Math.random() * (width - 2 * margin);
+                    y = margin + Math.random() * (height - 2 * margin);
+                    fx = undefined; fy = undefined;
+                }
                 
                 return {
                     ...node,
                     color: color,
                     radius: node.type === 'dataset' || node.type === 'class' ? 30 : 20,
                     x: x,
-                    y: y
+                    y: y,
+                    fx: fx,
+                    fy: fy
                 };
             });
             
@@ -291,6 +339,31 @@ function loadGraphWithD3() {
         });
 }
 
+// Fit all nodes into the viewport
+function fitToView() {
+    if (!nodes || nodes.length === 0 || !svg || !zoom) return;
+    const padding = 40;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(d => {
+        const hw = getNodeWidth(d) / 2;
+        const hh = getNodeHeight(d) / 2;
+        minX = Math.min(minX, d.x - hw);
+        minY = Math.min(minY, d.y - hh);
+        maxX = Math.max(maxX, d.x + hw);
+        maxY = Math.max(maxY, d.y + hh);
+    });
+    const graphW = maxX - minX;
+    const graphH = maxY - minY;
+    if (graphW === 0 || graphH === 0) return;
+    const scale = Math.min(0.9, (width - padding * 2) / graphW, (height - padding * 2) / graphH);
+    const tx = (width - graphW * scale) / 2 - minX * scale;
+    const ty = (height - graphH * scale) / 2 - minY * scale;
+    svg.transition().duration(500)
+       .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+window.fitToView = fitToView;
+
 // Render the visualization
 function renderVisualization() {
     console.log('Rendering visualization');
@@ -305,7 +378,7 @@ function renderVisualization() {
         .force('link', d3.forceLink(links).id(d => d.id).distance(250)) // Increased from 150 to 250
         .force('charge', d3.forceManyBody().strength(-800)) // Increased from -500 to -800
         .force('center', d3.forceCenter(width / 2, height / 2));
-    
+
     // Create links
     const link = g.selectAll('.link')
         .data(links)
@@ -406,8 +479,10 @@ function getNodeColor(d) {
     return '#cccccc';
 }
 
-// Helper to get node title (handle multilingual)
+// Helper to get the display label: prefer local_name (identifier) over title
 function getNodeTitle(d) {
+    // Use local_name as identifier if available (set during XSD/CSV import)
+    if (d.local_name) return d.local_name;
     let title = d.title;
     if (typeof title === 'object') {
         title = title.de || title.en || title.fr || title.it || Object.values(title)[0] || '';
@@ -458,7 +533,8 @@ function getWrappedTitle(d) {
 }
     
     // Update positions on simulation tick
-    simulation.on('tick', () => {
+    // Update positions on simulation tick
+    const applyPositions = () => {
         link
             .attr('x1', d => d.source.x)
             .attr('y1', d => d.source.y)
@@ -478,7 +554,9 @@ function getWrappedTitle(d) {
         
         node
             .attr('transform', d => `translate(${d.x},${d.y})`);
-    });
+    };
+
+    simulation.on('tick', applyPositions);
     
     // Enable drag behavior
     node.call(d3.drag()
@@ -486,6 +564,17 @@ function getWrappedTitle(d) {
         .on('drag', dragMove)
         .on('end', dragEnd));
     
+    // If physics is off, stop simulation and render positions immediately (no animation)
+    if (!physicsEnabled) {
+        simulation.stop();
+        simulation.tick(1); // advance positions one step to resolve link endpoints
+        applyPositions();   // paint those positions to the DOM right now
+        fitToView();
+    } else {
+        // Fit to view once the simulation has cooled down
+        simulation.on('end', fitToView);
+    }
+
     console.log('Visualization rendered successfully');
     console.log('Simulation created:', simulation);
     console.log('Nodes in DOM:', g.selectAll('.node').size());
@@ -502,13 +591,18 @@ function getWrappedTitle(d) {
 }
 
 // Drag functions
+let dragStartX = 0;
+let dragStartY = 0;
+
 function dragStart(event, d) {
     // Stop propagation to prevent zoom behavior
     event.sourceEvent.stopPropagation();
     
-    if (!event.active) simulation.alphaTarget(0.3).restart();
+    if (physicsEnabled && !event.active) simulation.alphaTarget(0.3).restart();
     d.fx = d.x;
     d.fy = d.y;
+    dragStartX = d.x;
+    dragStartY = d.y;
 }
 
 function dragMove(event, d) {
@@ -519,11 +613,21 @@ function dragMove(event, d) {
 }
 
 function dragEnd(event, d) {
-    if (!event.active) simulation.alphaTarget(0);
+    if (physicsEnabled && !event.active) simulation.alphaTarget(0);
     
     // Keep the node fixed at its final position
     // (don't set fx/fy to null to prevent unwanted movement)
     // This makes the graph more stable after dragging
+    
+    // If the node barely moved, treat it as a click (D3 drag suppresses click events)
+    const dx = Math.abs(d.x - dragStartX);
+    const dy = Math.abs(d.y - dragStartY);
+    if (dx < 5 && dy < 5) {
+        if (window.selectNode) {
+            window.selectNode(d.id);
+        }
+        return;
+    }
     
     // Save node position to server
     fetch('/api/nodes/' + d.id + '/position', {
@@ -761,7 +865,7 @@ function updateSelectionStatus() {
     selectionStatus.style.display = 'block';
     
     if (selectedNodes.length === 1) {
-        selectionStatus.innerHTML = `<small><strong>Selected:</strong> ${selectedNodes[0].title}</small>`;
+        selectionStatus.innerHTML = `<small><strong>Selected:</strong> ${getNodeTitle(selectedNodes[0])}</small>`;
     } else if (selectedNodes.length === 2) {
         selectionStatus.innerHTML = `<small><strong>Selected:</strong> ${selectedNodes[0].title} and ${selectedNodes[1].title}</small>`;
     } else {
@@ -892,10 +996,8 @@ function createConnection(sourceId, targetId) {
 function resetView() {
     console.log('Resetting view');
     
-    // Reset zoom to default scale and position
-    svg.transition()
-       .duration(750)
-       .call(zoom.transform, d3.zoomIdentity);
+    // Fit all nodes into view
+    fitToView();
     
     // Clear selections
     selectedNode = null;

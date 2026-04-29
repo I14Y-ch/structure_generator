@@ -667,6 +667,10 @@ class SHACLNode:
         self.xone_groups = []  # sh:xone exclusive groups
         self.range = None  # rdfs:range
         self.order = None  # sh:order for sorting in TTL export
+        self.min_inclusive = None  # sh:minInclusive
+        self.max_inclusive = None  # sh:maxInclusive
+        self.min_exclusive = None  # sh:minExclusive
+        self.max_exclusive = None  # sh:maxExclusive
         self.suggested_pattern = None
         self.suggested_in_values = None
         self.suggested_min_length = None
@@ -974,6 +978,10 @@ class SHACLNode:
             'xone_groups': self.xone_groups,
             'range': self.range,
             'order': self.order,
+            'min_inclusive': self.min_inclusive,
+            'max_inclusive': self.max_inclusive,
+            'min_exclusive': self.min_exclusive,
+            'max_exclusive': self.max_exclusive,
             'suggested_pattern': self.suggested_pattern,
             'suggested_in_values': self.suggested_in_values,
             'suggested_min_length': self.suggested_min_length,
@@ -1006,6 +1014,10 @@ class SHACLNode:
         node.xone_groups = data.get('xone_groups', [])
         node.range = data.get('range')
         node.order = data.get('order')
+        node.min_inclusive = data.get('min_inclusive')
+        node.max_inclusive = data.get('max_inclusive')
+        node.min_exclusive = data.get('min_exclusive')
+        node.max_exclusive = data.get('max_exclusive')
         node.suggested_pattern = data.get('suggested_pattern')
         node.suggested_in_values = data.get('suggested_in_values')
         node.suggested_min_length = data.get('suggested_min_length')
@@ -3003,6 +3015,14 @@ class FlaskSHACLGraphEditor:
             node.identifier = node_data['identifier'] if node_data['identifier'] else None
         if 'local_name' in node_data:
             node.local_name = node_data['local_name'] if node_data['local_name'] else None
+        if 'min_inclusive' in node_data:
+            node.min_inclusive = node_data['min_inclusive'] if node_data['min_inclusive'] not in [None, ''] else None
+        if 'max_inclusive' in node_data:
+            node.max_inclusive = node_data['max_inclusive'] if node_data['max_inclusive'] not in [None, ''] else None
+        if 'min_exclusive' in node_data:
+            node.min_exclusive = node_data['min_exclusive'] if node_data['min_exclusive'] not in [None, ''] else None
+        if 'max_exclusive' in node_data:
+            node.max_exclusive = node_data['max_exclusive'] if node_data['max_exclusive'] not in [None, ''] else None
         if 'order' in node_data:
             # Convert to int if it's a valid number, otherwise set to None
             try:
@@ -3331,6 +3351,7 @@ def get_graph():
             'title': node.title,
             'description': node.description,
             'type': node_type,
+            'local_name': node.local_name if hasattr(node, 'local_name') else None,
             'order': node.order if hasattr(node, 'order') else None,
             'i14y_id': node.i14y_id if hasattr(node, 'i14y_id') else None,
             'is_linked_to_concept': node.is_linked_to_concept if hasattr(node, 'is_linked_to_concept') else False
@@ -3464,18 +3485,22 @@ def get_graph_layout():
                 pos = nx.fruchterman_reingold_layout(G, pos=saved_pos, fixed=fixed_nodes)
             else:
                 # For kamada_kawai, we need to handle fixed nodes differently since it doesn't support the fixed parameter
-                if fixed_nodes:
-                    # Initialize with positions for all nodes
-                    init_pos = saved_pos.copy()
-                    for node_id in G.nodes():
-                        if node_id not in init_pos:
-                            init_pos[node_id] = (np.random.random(), np.random.random())
-                    pos = nx.kamada_kawai_layout(G, pos=init_pos)
-                    # Restore fixed positions
-                    for node_id in fixed_nodes:
-                        pos[node_id] = saved_pos[node_id]
-                else:
-                    pos = nx.kamada_kawai_layout(G)
+                try:
+                    import scipy  # kamada_kawai requires scipy
+                    if fixed_nodes:
+                        # Initialize with positions for all nodes
+                        init_pos = saved_pos.copy()
+                        for node_id in G.nodes():
+                            if node_id not in init_pos:
+                                init_pos[node_id] = (np.random.random(), np.random.random())
+                        pos = nx.kamada_kawai_layout(G, pos=init_pos)
+                        # Restore fixed positions
+                        for node_id in fixed_nodes:
+                            pos[node_id] = saved_pos[node_id]
+                    else:
+                        pos = nx.kamada_kawai_layout(G)
+                except ModuleNotFoundError:
+                    pos = nx.fruchterman_reingold_layout(G, pos=saved_pos if saved_pos else None, fixed=fixed_nodes if fixed_nodes else None)
             
             # Normalize positions to 0-1 range
             min_x = min(p[0] for p in pos.values())
@@ -6083,121 +6108,155 @@ def import_xsd():
             print(f"Using dataset node: {dataset_node.id} with title: {dataset_node.title}")
             
             # Track processed node shapes for edge creation
-            processed_nodes = {}
-            
-            # Find all NodeShapes (these become classes/concepts)
-            node_shapes = []
-            for s, p, o in g.triples((None, RDF.type, SH.NodeShape)):
-                node_shapes.append(s)
-            
-            print(f"Found {len(node_shapes)} node shapes in TTL")
-            
-            # Process each node shape
+            processed_nodes = {}  # str(shape_uri) -> SHACLNode
+
+            # Helper: extract sh:name / rdfs:label from a shape URI
+            def _get_name(uri):
+                for _, _, v in g.triples((uri, SH.name, None)):
+                    return str(v)
+                for _, _, v in g.triples((uri, RDFS.label, None)):
+                    return str(v)
+                return str(uri).split('/')[-1].split('#')[-1]
+
+            # Helper: extract best description
+            def _get_desc(uri):
+                for prop in [SH.description, RDFS.comment, DCTERMS.description]:
+                    for _, _, v in g.triples((uri, prop, None)):
+                        return str(v)
+                return ""
+
+            # Helper: extract constraints from a PropertyShape URI into a SHACLNode
+            def _apply_prop_constraints(node, uri):
+                for _, _, v in g.triples((uri, SH.datatype, None)):
+                    dt = str(v)
+                    # Convert full URI to prefixed form when possible
+                    if 'XMLSchema#' in dt:
+                        dt = 'xsd:' + dt.split('#')[-1]
+                    node.datatype = dt
+                    break
+                for _, _, v in g.triples((uri, SH.minCount, None)):
+                    try: node.min_count = int(v)
+                    except (ValueError, TypeError): pass
+                for _, _, v in g.triples((uri, SH.maxCount, None)):
+                    try: node.max_count = int(v)
+                    except (ValueError, TypeError): pass
+                for _, _, v in g.triples((uri, SH.minLength, None)):
+                    try: node.min_length = int(v)
+                    except (ValueError, TypeError): pass
+                for _, _, v in g.triples((uri, SH.maxLength, None)):
+                    try: node.max_length = int(v)
+                    except (ValueError, TypeError): pass
+                for _, _, v in g.triples((uri, SH.pattern, None)):
+                    node.pattern = str(v)
+                for _, _, v in g.triples((uri, SH.minInclusive, None)):
+                    node.min_inclusive = str(v)
+                for _, _, v in g.triples((uri, SH.maxInclusive, None)):
+                    node.max_inclusive = str(v)
+                for _, _, v in g.triples((uri, SH.minExclusive, None)):
+                    node.min_exclusive = str(v)
+                for _, _, v in g.triples((uri, SH.maxExclusive, None)):
+                    node.max_exclusive = str(v)
+                # sh:in enumeration
+                in_values = []
+                for _, _, head in g.triples((uri, SH['in'], None)):
+                    cur = head
+                    while cur and cur != RDF.nil:
+                        for _, _, first in g.triples((cur, RDF.first, None)):
+                            in_values.append(str(first))
+                        nexts = list(g.objects(cur, RDF.rest))
+                        cur = nexts[0] if nexts else None
+                if in_values:
+                    node.in_values = in_values
+
+            # --- Pass 1: create class nodes for all NodeShapes ---
+            node_shapes = [s for s, _, _ in g.triples((None, RDF.type, SH.NodeShape))]
+            print(f"Found {len(node_shapes)} NodeShapes in TTL")
+
             for shape_uri in node_shapes:
-                # Get node name (from sh:name or the URI)
-                node_name = None
-                for _, _, name in g.triples((shape_uri, SH.name, None)):
-                    node_name = str(name)
-                    break
-                
-                if not node_name:
-                    # Extract from URI
-                    node_name = str(shape_uri).split('/')[-1]
-                
-                # Get description
-                description = ""
-                for desc_prop in [SH.description, RDFS.comment, DCTERMS.description]:
-                    for _, _, desc in g.triples((shape_uri, desc_prop, None)):
-                        description = str(desc)
-                        break
-                    if description:
-                        break
-                
-                # Determine node type based on properties
-                # If it has a datatype, it's more like a data element
-                # Otherwise, it's a class
-                has_datatype = False
-                for _, _, _ in g.triples((shape_uri, SH.datatype, None)):
-                    has_datatype = True
-                    break
-                
-                # Create appropriate node
-                node_type = 'data_element' if has_datatype else 'class'
-                shacl_node = SHACLNode(node_type, title=node_name, description=description)
-                
-                # Add datatype if present
-                if has_datatype:
-                    for _, _, dt in g.triples((shape_uri, SH.datatype, None)):
-                        shacl_node.datatype = str(dt)
-                        break
-                
-                # Add constraints for data elements
-                if node_type == 'data_element':
-                    # Min/Max Length
-                    for _, _, value in g.triples((shape_uri, SH.minLength, None)):
-                        try:
-                            shacl_node.min_length = int(value)
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    for _, _, value in g.triples((shape_uri, SH.maxLength, None)):
-                        try:
-                            shacl_node.max_length = int(value)
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    # Pattern
-                    for _, _, value in g.triples((shape_uri, SH.pattern, None)):
-                        shacl_node.pattern = str(value)
-                
-                # Add to editor nodes
+                node_name = _get_name(shape_uri)
+                description = _get_desc(shape_uri)
+                shacl_node = SHACLNode('class', title=node_name, description=description)
+                shacl_node.local_name = node_name  # identifier = xs:element name
+                shacl_node.identifier = node_name   # populate the editable identifier field
                 editor.nodes[shacl_node.id] = shacl_node
                 processed_nodes[str(shape_uri)] = shacl_node
-                
-                # Connect to dataset
-                edge_id = f"{dataset_node.id}-{shacl_node.id}"
-                editor.edges[edge_id] = {
-                    'id': edge_id,
-                    'from': dataset_node.id,
-                    'to': shacl_node.id,
-                    'cardinality': '1..1'
-                }
-                dataset_node.connections.add(shacl_node.id)
-                shacl_node.connections.add(dataset_node.id)
-                
-                print(f"Created {node_type} node {shacl_node.id} for shape {node_name} (has_datatype={has_datatype})")
-            
-            # Process property shapes to establish connections between nodes
-            property_shapes = []
-            for s, p, o in g.triples((None, RDF.type, SH.PropertyShape)):
-                property_shapes.append(s)
-            
-            # Look for sh:node references to establish connections
+                print(f"Created class node: {node_name}")
+
+            # --- Pass 2: create data_element nodes for PropertyShapes inside each class ---
             for shape_uri in node_shapes:
-                if str(shape_uri) not in processed_nodes:
-                    continue
-                
-                source_node = processed_nodes[str(shape_uri)]
-                
-                # Find properties that reference other nodes
-                for _, _, prop_shape in g.triples((shape_uri, SH.property, None)):
-                    for _, _, target_shape in g.triples((prop_shape, SH.node, None)):
-                        if str(target_shape) in processed_nodes:
-                            target_node = processed_nodes[str(target_shape)]
-                            
-                            # Create edge between source and target
-                            edge_id = f"{source_node.id}-{target_node.id}"
-                            if edge_id not in editor.edges:
-                                editor.edges[edge_id] = {
-                                    'id': edge_id,
-                                    'from': source_node.id,
-                                    'to': target_node.id,
-                                    'cardinality': '1..1'
-                                }
-                                source_node.connections.add(target_node.id)
-                                target_node.connections.add(source_node.id)
-            
-            print(f"Successfully processed XSD. Created {len(processed_nodes)} nodes and {len(editor.edges)} edges.")
+                class_node = processed_nodes[str(shape_uri)]
+
+                for _, _, prop_uri in g.triples((shape_uri, SH.property, None)):
+                    prop_name = _get_name(prop_uri)
+                    description = _get_desc(prop_uri)
+
+                    # If this PropertyShape has sh:node pointing to a known class,
+                    # create a class-to-class edge instead of a data element
+                    node_targets = list(g.objects(prop_uri, SH.node))
+                    if node_targets and str(node_targets[0]) in processed_nodes:
+                        target_class = processed_nodes[str(node_targets[0])]
+                        edge_id = f"{class_node.id}-{target_class.id}"
+                        if edge_id not in editor.edges:
+                            editor.edges[edge_id] = {
+                                'id': edge_id,
+                                'from': class_node.id,
+                                'to': target_class.id,
+                                'cardinality': '1..1'
+                            }
+                            class_node.connections.add(target_class.id)
+                            target_class.connections.add(class_node.id)
+                            print(f"Connected class {class_node.title} -> class {target_class.title}")
+                        continue
+
+                    # Regular data element
+                    de_node = SHACLNode('data_element', title=prop_name, description=description)
+                    de_node.local_name = prop_name
+                    _apply_prop_constraints(de_node, prop_uri)
+
+                    editor.nodes[de_node.id] = de_node
+
+                    # Connect data element to its parent class
+                    cardinality = "1..1"
+                    min_counts = list(g.objects(prop_uri, SH.minCount))
+                    max_counts = list(g.objects(prop_uri, SH.maxCount))
+                    if min_counts or max_counts:
+                        min_c = int(min_counts[0]) if min_counts else 0
+                        max_c = int(max_counts[0]) if max_counts else None
+                        cardinality = f"{min_c}..{'n' if max_c is None else max_c}"
+
+                    edge_id = f"{class_node.id}-{de_node.id}"
+                    editor.edges[edge_id] = {
+                        'id': edge_id,
+                        'from': class_node.id,
+                        'to': de_node.id,
+                        'cardinality': cardinality
+                    }
+                    class_node.connections.add(de_node.id)
+                    de_node.connections.add(class_node.id)
+                    print(f"Created data_element: {prop_name} -> class {class_node.title}")
+
+            # --- Pass 3: connect top-level class nodes to the dataset ---
+            # A class is "top-level" when no other class references it via sh:node
+            referenced_classes = set()
+            for _, prop_uri, _ in g.triples((None, SH.property, None)):
+                for _, _, node_ref in g.triples((prop_uri, SH.node, None)):
+                    if str(node_ref) in processed_nodes:
+                        referenced_classes.add(str(node_ref))
+
+            for shape_uri, class_node in processed_nodes.items():
+                if shape_uri not in referenced_classes:
+                    edge_id = f"{dataset_node.id}-{class_node.id}"
+                    if edge_id not in editor.edges:
+                        editor.edges[edge_id] = {
+                            'id': edge_id,
+                            'from': dataset_node.id,
+                            'to': class_node.id,
+                            'cardinality': '1..1'
+                        }
+                        dataset_node.connections.add(class_node.id)
+                        class_node.connections.add(dataset_node.id)
+
+            print(f"Successfully processed XSD. Created {len(processed_nodes)} class nodes and {len(editor.edges)} edges.")
         except Exception as e:
             import traceback
             print(f"Error processing TTL from XSD: {str(e)}")

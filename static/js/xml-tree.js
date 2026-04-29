@@ -8,6 +8,31 @@ let xmlTreeLayout;
 let xmlTreeConnectionMode = false;
 let xmlTreePendingConnection = null;
 
+// Set of class node IDs whose data_element children are collapsed
+const collapsedClasses = new Set();
+let initialCollapseApplied = false;
+
+// Toggle a class node's data_element children
+function toggleClassCollapse(nodeId) {
+    if (collapsedClasses.has(nodeId)) {
+        collapsedClasses.delete(nodeId);
+    } else {
+        collapsedClasses.add(nodeId);
+    }
+    fetch('/api/graph')
+        .then(r => r.json())
+        .then(data => renderXmlTree(data));
+}
+
+// Filter out data_element children for collapsed class nodes before D3 hierarchy
+function applyCollapseState(node) {
+    if (!node || !node.children) return;
+    if (node.type === 'class' && collapsedClasses.has(node.id)) {
+        node.children = node.children.filter(c => c.type !== 'data_element');
+    }
+    node.children.forEach(applyCollapseState);
+}
+
 // Initialize XML tree visualization
 function initializeXmlTreeVisualization(containerId) {
     console.log('Initializing XML tree visualization in container:', containerId);
@@ -117,6 +142,7 @@ function convertToTreeData(graphData) {
     });
 
     const resolveLabel = node => {
+        if (node && node.local_name) return node.local_name;
         if (node && typeof node.title === 'object') {
             return node.title.de || node.title.en || node.title.fr || node.title.it || Object.values(node.title)[0] || '';
         }
@@ -133,6 +159,8 @@ function convertToTreeData(graphData) {
     };
 
     nodeMap.forEach(node => {
+        node.hasDataElementChildren = node.children.some(c => c.type === 'data_element');
+        node.dataElementChildCount = node.children.filter(c => c.type === 'data_element').length;
         if (node.children && node.children.length > 1) {
             node.children.sort(compareNodes);
         }
@@ -204,6 +232,28 @@ function renderXmlTree(graphData) {
         return;
     }
     
+    // Apply collapse state before building hierarchy
+    if (!initialCollapseApplied) {
+        initialCollapseApplied = true;
+        // Count classes that have data element children
+        const classesWithDataElements = [];
+        const countClasses = (node) => {
+            if (!node) return;
+            if (node.type === 'class' && node.hasDataElementChildren) {
+                classesWithDataElements.push(node);
+            }
+            (node.children || []).forEach(countClasses);
+        };
+        countClasses(treeData);
+        const tooManyClasses = classesWithDataElements.length > 10;
+        classesWithDataElements.forEach(cls => {
+            if (tooManyClasses || cls.dataElementChildCount > 10) {
+                collapsedClasses.add(cls.id);
+            }
+        });
+    }
+    applyCollapseState(treeData);
+
     // Create hierarchy
     const root = d3.hierarchy(treeData, d => d.children);
     
@@ -314,10 +364,13 @@ function renderXmlTree(graphData) {
         }
         
         // Calculate box size based on content
-        // Get title - handle multilingual titles
-        let label = nodeData.title;
-        if (typeof label === 'object') {
-            label = label.de || label.en || label.fr || label.it || Object.values(label)[0] || '';
+        // Get title - prefer local_name (identifier), fall back to multilingual title
+        let label = nodeData.local_name;
+        if (!label) {
+            label = nodeData.title;
+            if (typeof label === 'object') {
+                label = label.de || label.en || label.fr || label.it || Object.values(label)[0] || '';
+            }
         }
         if (!label) {
             label = nodeData.label || nodeData.id || 'unnamed';
@@ -372,34 +425,44 @@ function renderXmlTree(graphData) {
                 textColor = '#666';
         }
         
+        // Expand/collapse toggle — only on class nodes that have data element children
+        const hasToggle = nodeData.type === 'class' && nodeData.hasDataElementChildren;
+        const toggleWidth = hasToggle ? 20 : 0; // extra width reserved for the toggle inside the box
+        const boxWidth = labelWidth + toggleWidth;
+
         // Main box
         group.append('rect')
             .attr('x', 0)
             .attr('y', -12)
-            .attr('width', labelWidth)
+            .attr('width', boxWidth)
             .attr('height', 24)
             .attr('rx', 2)
             .style('fill', bgColor)
             .style('stroke', borderColor)
             .style('stroke-width', '1.5px');
-        
-        // Expand/collapse indicator for nodes with children
-        if (nodeData.children && nodeData.children.length > 0) {
+
+        if (hasToggle) {
+            const isCollapsed = collapsedClasses.has(nodeData.id);
             group.append('text')
-                .attr('x', 5)
+                .attr('x', boxWidth - 4)
                 .attr('y', 0)
-                .attr('text-anchor', 'start')
+                .attr('text-anchor', 'end')
                 .attr('dominant-baseline', 'middle')
-                .style('font-size', '12px')
+                .style('font-size', '13px')
                 .style('font-weight', 'bold')
                 .style('fill', borderColor)
                 .style('user-select', 'none')
-                .text('▼');
+                .style('cursor', 'pointer')
+                .text(isCollapsed ? '▶' : '▼')
+                .on('click', function(event) {
+                    event.stopPropagation();
+                    toggleClassCollapse(nodeData.id);
+                });
         }
         
         // Node label
         group.append('text')
-            .attr('x', nodeData.children && nodeData.children.length > 0 ? 18 : 8)
+            .attr('x', 8)
             .attr('y', 0)
             .attr('text-anchor', 'start')
             .attr('dominant-baseline', 'middle')

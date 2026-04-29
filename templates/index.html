@@ -201,7 +201,7 @@
                                 <label class="btn btn-outline-primary" for="viz-tree">Tree View</label>
                             </div>
                         </div>
-                        <small class="text-muted" id="viz-description">Force-directed network layout</small>
+                        <small class="text-muted" id="viz-description"><button class="btn btn-outline-success btn-sm" onclick="togglePhysics()" id="physics-toggle-btn" style="display:none;">Physics: ON</button></small>
                     </div>
                     
                     <div id="graph-container">
@@ -807,6 +807,7 @@
                     initializeXmlTreeVisualization('graph-container');
                     loadGraph();
                     vizDescription.textContent = 'Hierarchical tree layout';
+                    document.getElementById('physics-toggle-btn').style.display = 'none';
                     
                     // Override toggleConnectionMode for tree view
                     window.toggleConnectionMode = window.toggleXmlTreeConnectionMode;
@@ -818,7 +819,8 @@
                 if (typeof initializeD3Visualization === 'function') {
                     initializeD3Visualization('graph-container');
                     loadGraph();
-                    vizDescription.textContent = 'Force-directed network layout';
+                    vizDescription.textContent = '';
+                    document.getElementById('physics-toggle-btn').style.display = 'inline-block';
                     
                     // Restore original network toggleConnectionMode
                     if (window._networkToggleConnectionMode) {
@@ -897,7 +899,7 @@
                         text.setAttribute('y', y);
                         text.setAttribute('text-anchor', 'middle');
                         text.setAttribute('dominant-baseline', 'middle');
-                        text.textContent = node.title;
+                        text.textContent = node.local_name || node.title;
                         svg.appendChild(text);
                         
                         // Add type label
@@ -1110,6 +1112,10 @@
                     return;
                 }
                 
+                // Show physics toggle since network view is the default
+                const physicsBtn = document.getElementById('physics-toggle-btn');
+                if (physicsBtn) physicsBtn.style.display = 'inline-block';
+                
                 // Initialize right sidebar
                 clearNodeSelection();
                 console.log('Initialization complete ✓');
@@ -1321,7 +1327,7 @@
                             classEditableFields = `
                                 <div class="mb-3 mt-3">
                                     <label for="edit-class-identifier" class="form-label small">Identifier:</label>
-                                    <input type="text" class="form-control form-control-sm" id="edit-class-identifier" value="${escapeHtml(node.identifier || '')}" placeholder="e.g. my_class_name" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
+                                    <input type="text" class="form-control form-control-sm" id="edit-class-identifier" value="${escapeHtml(node.identifier || node.local_name || '')}" placeholder="e.g. my_class_name" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
                                     <div class="form-text">Unique identifier (letters, numbers, hyphens, underscores only)</div>
                                 </div>
                                 <div class="mb-3 mt-3">

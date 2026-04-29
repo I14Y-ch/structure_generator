@@ -110,11 +110,10 @@ def process_simple_type(simple_type, xsd_root, graph, type_name=None, I14Y=None)
     """Process a simpleType definition and create NodeShape if it's a global type."""
     restriction = simple_type.find('{http://www.w3.org/2001/XMLSchema}restriction')
     
-    # If this is a global simpleType, create a NodeShape for it
+    # If this is a global simpleType, create a PropertyShape for it
     if type_name and I14Y:
         node_shape = I14Y[type_name]
-        graph.add((node_shape, RDF.type, SH.NodeShape))
-        graph.add((node_shape, RDF.type, RDFS.Class))
+        graph.add((node_shape, RDF.type, SH.PropertyShape))
         graph.add((node_shape, SH.name, Literal(type_name, lang='en')))
         graph.add((node_shape, RDFS.label, Literal(type_name, lang='en')))
         
@@ -155,7 +154,7 @@ def process_simple_type(simple_type, xsd_root, graph, type_name=None, I14Y=None)
     
     return ('simple', 'string', {})
 
-def handle_sequence(sequence, xsd_root, graph, parent_shape, parent_type_name, I14Y):
+def handle_sequence(sequence, xsd_root, graph, parent_shape, parent_type_name, I14Y, type_map=None):
     """Handle XSD sequence with order constraints."""
     if sequence is None:
         return
@@ -171,7 +170,7 @@ def handle_sequence(sequence, xsd_root, graph, parent_shape, parent_type_name, I
             graph.add((prop_shape, SH.name, Literal(element_name, lang='en')))
             
             # Process element details
-            process_element_details(element, xsd_root, graph, prop_shape, I14Y)
+            process_element_details(element, xsd_root, graph, prop_shape, I14Y, type_map)
             
             graph.add((parent_shape, SH.property, prop_shape))
             order += 1
@@ -229,25 +228,60 @@ def handle_attribute(attribute, xsd_root, graph, parent_shape=None, parent_type_
     
     return attr_shape
 
-def process_element_details(element, xsd_root, graph, prop_shape, I14Y):
+def _apply_simple_type_constraints(type_info, prop_shape, graph):
+    """Apply constraints extracted from process_simple_type() onto a PropertyShape."""
+    if type_info[0] != 'simple':
+        return
+    base_type = type_info[1]
+    graph.add((prop_shape, SH.datatype, XSD[base_type]))
+    graph.add((prop_shape, RDF.type, OWL.DatatypeProperty))
+    graph.add((prop_shape, RDFS.range, XSD[base_type]))
+    for facet_name, facet_value in type_info[2].get('facets', {}).items():
+        translate_restriction(facet_name, facet_value, base_type, prop_shape, graph)
+    if type_info[2].get('enumerations'):
+        handle_enumeration(type_info[2]['enumerations'], prop_shape, graph)
+
+
+def process_element_details(element, xsd_root, graph, prop_shape, I14Y, type_map=None):
     """Process element details and add to property shape."""
     translate_annotation(element, prop_shape, graph)
 
+    ns = '{http://www.w3.org/2001/XMLSchema}'
     element_type = element.get('type')
     if element_type:
         if 'xs:' in element_type or 'xsd:' in element_type:
             # Built-in type
             base_type = element_type.split(':')[-1]
             graph.add((prop_shape, SH.datatype, XSD[base_type]))
-            # Add as DatatypeProperty
             graph.add((prop_shape, RDF.type, OWL.DatatypeProperty))
             graph.add((prop_shape, RDFS.range, XSD[base_type]))
         else:
-            # Custom type - could be simple or complex
+            # Named custom type - distinguish simpleType (inline constraints) vs complexType (sh:node)
             type_name = element_type.split(':')[-1]
-            graph.add((prop_shape, SH['node'], I14Y[type_name]))
-            graph.add((prop_shape, RDF.type, OWL.ObjectProperty))
-    
+            simple_type_def = xsd_root.find(f'.//{ns}simpleType[@name="{type_name}"]')
+            if simple_type_def is not None:
+                # Named simpleType: inline the datatype and all facets directly
+                type_info = process_simple_type(simple_type_def, xsd_root, graph, None, None)
+                _apply_simple_type_constraints(type_info, prop_shape, graph)
+            else:
+                # Complex type: use sh:node reference with element-name identifier
+                identifier = (type_map or {}).get(type_name, type_name)
+                graph.add((prop_shape, SH['node'], I14Y[identifier]))
+                graph.add((prop_shape, RDF.type, OWL.ObjectProperty))
+    else:
+        # No type attribute - check for inline type definitions
+        inline_simple = element.find(f'{ns}simpleType')
+        inline_complex = element.find(f'{ns}complexType')
+
+        if inline_simple is not None:
+            # Inline simpleType: extract restriction and apply constraints
+            type_info = process_simple_type(inline_simple, xsd_root, graph, None, None)
+            _apply_simple_type_constraints(type_info, prop_shape, graph)
+        elif inline_complex is not None:
+            # Inline complexType: process its content into this shape directly
+            element_name = element.get('name', 'anonymous')
+            process_complex_type_content(inline_complex, xsd_root, graph, prop_shape, element_name, I14Y, type_map)
+
     # Handle minOccurs and maxOccurs
     min_occurs = element.get('minOccurs', '1')
     max_occurs = element.get('maxOccurs', '1')
@@ -256,7 +290,7 @@ def process_element_details(element, xsd_root, graph, prop_shape, I14Y):
     if max_occurs != "unbounded":
         graph.add((prop_shape, SH.maxCount, Literal(int(max_occurs), datatype=XSD.integer)))
 
-def process_complex_type_content(complex_type, xsd_root, graph, node_shape, type_name, I14Y):
+def process_complex_type_content(complex_type, xsd_root, graph, node_shape, type_name, I14Y, type_map=None):
     """Process the content of a complex type."""
     # Handle simple content
     simple_content = complex_type.find('{http://www.w3.org/2001/XMLSchema}simpleContent')
@@ -291,7 +325,7 @@ def process_complex_type_content(complex_type, xsd_root, graph, node_shape, type
     sequence = complex_type.find('{http://www.w3.org/2001/XMLSchema}sequence')
     
     if sequence is not None:
-        handle_sequence(sequence, xsd_root, graph, node_shape, type_name, I14Y)
+        handle_sequence(sequence, xsd_root, graph, node_shape, type_name, I14Y, type_map)
     
     # Process attributes
     for attr in complex_type.findall('{http://www.w3.org/2001/XMLSchema}attribute'):
@@ -299,57 +333,108 @@ def process_complex_type_content(complex_type, xsd_root, graph, node_shape, type
     
     graph.add((node_shape, SH.closed, Literal(True)))
 
-def process_global_element(element, xsd_root, graph, I14Y):
-    """Process a global element definition."""
+def _element_has_complex_type(element, xsd_root):
+    """Return True if element resolves to a complex type, False if simple/built-in."""
+    element_type = element.get('type')
+    if element_type:
+        if 'xs:' in element_type or 'xsd:' in element_type:
+            return False  # Built-in XSD type → simple
+        # Named type reference – look it up
+        type_name = element_type.split(':')[-1]
+        ns = '{http://www.w3.org/2001/XMLSchema}'
+        if xsd_root.find(f'.//{ns}complexType[@name="{type_name}"]') is not None:
+            return True
+        return False  # simpleType reference → simple
+    # Inline type
+    if element.find('{http://www.w3.org/2001/XMLSchema}complexType') is not None:
+        return True
+    return False
+
+
+def process_global_element(element, xsd_root, graph, I14Y, type_map=None):
+    """Process a global element definition.
+
+    A class (complex type) becomes sh:NodeShape.
+    A data element (simple / built-in type) becomes sh:PropertyShape.
+    The identifier is always the xs:element name attribute.
+    """
     element_name = element.get('name')
     if not element_name:
         return
-    
-    # Create a NodeShape for the global element
+
+    is_class = _element_has_complex_type(element, xsd_root)
     node_shape = I14Y[element_name]
-    graph.add((node_shape, RDF.type, SH.NodeShape))
-    graph.add((node_shape, RDF.type, RDFS.Class))
+
+    if is_class:
+        graph.add((node_shape, RDF.type, SH.NodeShape))
+        graph.add((node_shape, RDF.type, RDFS.Class))
+    else:
+        graph.add((node_shape, RDF.type, SH.PropertyShape))
+        graph.add((node_shape, SH.path, node_shape))
+
     graph.add((node_shape, SH.name, Literal(element_name, lang='en')))
     graph.add((node_shape, RDFS.label, Literal(element_name, lang='en')))
-    
+
     # Add annotation
     translate_annotation(element, node_shape, graph)
-    
+
     # Process type
     element_type = element.get('type')
     if element_type:
         if 'xs:' in element_type or 'xsd:' in element_type:
-            # Built-in type
+            # Built-in type → data element
             base_type = element_type.split(':')[-1]
             graph.add((node_shape, SH.datatype, XSD[base_type]))
+            graph.add((node_shape, RDF.type, OWL.DatatypeProperty))
+            graph.add((node_shape, RDFS.range, XSD[base_type]))
         else:
-            # Custom type reference
+            # Named type reference
             type_name = element_type.split(':')[-1]
-            graph.add((node_shape, SH['node'], I14Y[type_name]))
+            if is_class:
+                graph.add((node_shape, SH['node'], I14Y[type_name]))
+            else:
+                graph.add((node_shape, SH.datatype, I14Y[type_name]))
     else:
         # Check for inline type definition
         simple_type = element.find('{http://www.w3.org/2001/XMLSchema}simpleType')
         complex_type = element.find('{http://www.w3.org/2001/XMLSchema}complexType')
-        
+
         if simple_type is not None:
             type_info = process_simple_type(simple_type, xsd_root, graph, None, None)
             if type_info[0] == 'simple':
                 graph.add((node_shape, SH.datatype, XSD[type_info[1]]))
-                # Add facets
                 for facet_name, facet_value in type_info[2].get('facets', {}).items():
                     translate_restriction(facet_name, facet_value, type_info[1], node_shape, graph)
-                # Add enumerations
                 if type_info[2].get('enumerations'):
                     handle_enumeration(type_info[2]['enumerations'], node_shape, graph)
-        
+
         elif complex_type is not None:
-            process_complex_type_content(complex_type, xsd_root, graph, node_shape, element_name, I14Y)
-    
+            process_complex_type_content(complex_type, xsd_root, graph, node_shape, element_name, I14Y, type_map)
+
     # Handle default and fixed values
     if element.get('default'):
         graph.add((node_shape, SH.defaultValue, Literal(element.get('default'))))
     if element.get('fixed'):
         graph.add((node_shape, SH.hasValue, Literal(element.get('fixed'))))
+
+def build_type_to_element_map(xsd_root):
+    """Build a mapping from xs:complexType name → xs:element name.
+
+    When multiple elements reference the same complex type, the first occurrence wins.
+    This ensures NodeShape identifiers use the xs:element name, not the xs:complexType name.
+    """
+    ns = '{http://www.w3.org/2001/XMLSchema}'
+    type_map = {}
+    for element in xsd_root.iter(f'{ns}element'):
+        elem_name = element.get('name')
+        elem_type = element.get('type')
+        if elem_name and elem_type:
+            local_type = elem_type.split(':')[-1]
+            if local_type not in type_map:
+                if xsd_root.find(f'.//{ns}complexType[@name="{local_type}"]') is not None:
+                    type_map[local_type] = elem_name
+    return type_map
+
 
 def generate_shacl(xsd_root, dataset_identifier):
     """Generate comprehensive SHACL shapes from the XSD schema."""
@@ -368,6 +453,9 @@ def generate_shacl(xsd_root, dataset_identifier):
     g.bind("owl", OWL)
     g.bind("rdfs", RDFS)
     
+    # Build mapping from xs:complexType name → xs:element name (identifier rule)
+    type_map = build_type_to_element_map(xsd_root)
+    
     # Process global simple types
     for simple_type in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}simpleType'):
         type_name = simple_type.get('name')
@@ -378,23 +466,32 @@ def generate_shacl(xsd_root, dataset_identifier):
     for complex_type in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}complexType'):
         type_name = complex_type.get('name')
         if type_name:  # Only process global complex types
-            node_shape = I14Y[type_name]
+            # Use the xs:element name as identifier if an element references this type
+            identifier = type_map.get(type_name, type_name)
+            node_shape = I14Y[identifier]
             g.add((node_shape, RDF.type, SH.NodeShape))
             g.add((node_shape, RDF.type, RDFS.Class))
-            g.add((node_shape, SH.name, Literal(type_name, lang='en')))
-            g.add((node_shape, RDFS.label, Literal(type_name, lang='en')))
+            g.add((node_shape, SH.name, Literal(identifier, lang='en')))
+            g.add((node_shape, RDFS.label, Literal(identifier, lang='en')))
             
             # Add annotation
             translate_annotation(complex_type, node_shape, g)
             
-            # Process complex type content
-            process_complex_type_content(complex_type, xsd_root, g, node_shape, type_name, I14Y)
+            # Process complex type content (property paths use the identifier too)
+            process_complex_type_content(complex_type, xsd_root, g, node_shape, identifier, I14Y, type_map)
     
     # Process global elements
     for element in xsd_root.findall('.//{http://www.w3.org/2001/XMLSchema}element'):
         # Only process top-level elements (direct children of schema)
-        if element.getparent().tag == '{http://www.w3.org/2001/XMLSchema}schema':
-            process_global_element(element, xsd_root, g, I14Y)
+        if element.getparent().tag != '{http://www.w3.org/2001/XMLSchema}schema':
+            continue
+        # Skip document-root wrapper elements that have an inline xs:complexType
+        # but no type= attribute — these are container/wrapper shapes (e.g. "nomenclature"),
+        # not meaningful data classes. Named complex types are already handled above.
+        if (element.get('type') is None and
+                element.find('{http://www.w3.org/2001/XMLSchema}complexType') is not None):
+            continue
+        process_global_element(element, xsd_root, g, I14Y, type_map)
     
     return g
 
