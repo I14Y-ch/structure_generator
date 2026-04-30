@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Any, Tuple
 import csv
 import io
 from pathlib import Path
+from urllib.parse import quote
 from rdflib import Graph, Literal, Namespace, URIRef, BNode
 from rdflib.namespace import RDF, XSD, SH, OWL, RDFS, DCTERMS
 
@@ -675,6 +676,74 @@ class SHACLNode:
         self.suggested_in_values = None
         self.suggested_min_length = None
         self.suggested_max_length = None
+
+    @staticmethod
+    def _extract_i14y_identifier(resource_data: Dict) -> Optional[str]:
+        """Extract a stable human-readable identifier from I14Y payload."""
+        if not isinstance(resource_data, dict):
+            return None
+
+        direct_identifier = resource_data.get('identifier')
+        if isinstance(direct_identifier, str) and direct_identifier.strip():
+            return direct_identifier.strip()
+
+        identifiers = resource_data.get('identifiers')
+        if isinstance(identifiers, list):
+            for entry in identifiers:
+                if isinstance(entry, str) and entry.strip():
+                    return entry.strip()
+                if isinstance(entry, dict):
+                    value = entry.get('notation') or entry.get('identifier') or entry.get('value')
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+
+        return None
+
+    @staticmethod
+    def _extract_i14y_version(resource_data: Dict) -> Optional[str]:
+        """Extract version string for concept permalink generation."""
+        if not isinstance(resource_data, dict):
+            return None
+
+        version = resource_data.get('version')
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+        if isinstance(version, dict):
+            value = version.get('notation') or version.get('identifier') or version.get('value')
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        versions = resource_data.get('versions')
+        if isinstance(versions, list):
+            for entry in versions:
+                if isinstance(entry, str) and entry.strip():
+                    return entry.strip()
+                if isinstance(entry, dict):
+                    value = entry.get('notation') or entry.get('identifier') or entry.get('value')
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+
+        return None
+
+    @classmethod
+    def build_i14y_concept_uri(cls, concept_data: Dict) -> Optional[str]:
+        """Build concept permalink using register.ld.admin.ch pattern."""
+        identifier = cls._extract_i14y_identifier(concept_data)
+        if not identifier:
+            return None
+
+        version = cls._extract_i14y_version(concept_data)
+        if version:
+            return f"https://register.ld.admin.ch/i14y/concept/{quote(identifier, safe='')}/version/{quote(version, safe='')}"
+        return f"https://register.ld.admin.ch/i14y/concept/{quote(identifier, safe='')}"
+
+    @classmethod
+    def build_i14y_dataset_uri(cls, dataset_data: Dict) -> Optional[str]:
+        """Build dataset permalink using register.ld.admin.ch pattern."""
+        identifier = cls._extract_i14y_identifier(dataset_data)
+        if not identifier:
+            return None
+        return f"https://register.ld.admin.ch/i14y/dataset/{quote(identifier, safe='')}"
     
     def create_data_element_from_concept(self, concept_node, local_name: str = None):
         """Create a data element from this concept node
@@ -705,7 +774,7 @@ class SHACLNode:
         
         # Link to concept via conformsTo
         data_element.is_linked_to_concept = True
-        data_element.conforms_to_concept_uri = concept_node.i14y_concept_uri or f"concept:{concept_node.id}"
+        data_element.conforms_to_concept_uri = concept_node.i14y_concept_uri
         
         # Inherit constraints from concept
         data_element.datatype = concept_node.datatype
@@ -776,8 +845,7 @@ class SHACLNode:
             self.description = {'de': str(desc_obj)} if desc_obj else {'de': ''}
         
         # Set the concept URI for TTL export
-        if self.i14y_id:
-            self.i14y_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{self.i14y_id}/description"
+        self.i14y_concept_uri = SHACLNode.build_i14y_concept_uri(concept_data)
         
         # Determine appropriate datatype based on concept metadata
         self._determine_datatype()
@@ -818,8 +886,7 @@ class SHACLNode:
             self.description = {'de': str(desc_obj)} if desc_obj else {'de': ''}
         
         # Set the dataset URI for references
-        if self.i14y_id:
-            self.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{self.i14y_id}/description"
+        self.i14y_dataset_uri = SHACLNode.build_i14y_dataset_uri(dataset_data)
     
     def _apply_i14y_constraints(self):
         """Apply SHACL constraints extracted from I14Y concept data"""
@@ -3694,9 +3761,9 @@ def create_data_element():
             
             # If concept_data is provided, link to I14Y concept during creation
             if concept_data:
-                concept_id_from_data = concept_data.get('id')
-                if concept_id_from_data:
-                    data_element.conforms_to_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{concept_id_from_data}/description"
+                concept_uri = SHACLNode.build_i14y_concept_uri(concept_data)
+                if concept_uri:
+                    data_element.conforms_to_concept_uri = concept_uri
                     data_element.is_linked_to_concept = True
                     data_element.i14y_data = concept_data
                     
@@ -3942,9 +4009,9 @@ def link_data_element_to_concept(data_element_id):
         original_local_name = data_element.local_name
         
         # Create concept URI for conformsTo
-        concept_id = concept_data.get('id')
-        if concept_id:
-            data_element.conforms_to_concept_uri = f"https://www.i14y.admin.ch/de/catalog/concepts/{concept_id}/description"
+        concept_uri = SHACLNode.build_i14y_concept_uri(concept_data)
+        if concept_uri:
+            data_element.conforms_to_concept_uri = concept_uri
             data_element.is_linked_to_concept = True
         
         # Store I14Y data for reference (but don't make it a concept node)
@@ -4993,7 +5060,7 @@ def link_i14y_dataset():
         dataset_node.identifier = i14y_identifier
         
         # Set the I14Y dataset URI
-        dataset_node.i14y_dataset_uri = f"https://www.i14y.admin.ch/de/catalog/datasets/{dataset_data.get('id')}/description"
+        dataset_node.i14y_dataset_uri = SHACLNode.build_i14y_dataset_uri(dataset_data)
         
         print(f"Successfully linked dataset: {dataset_node.title} (ID: {dataset_id})")
         
@@ -5420,8 +5487,7 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 if not description and descriptions:
                     description = str(descriptions[0])
             
-            if not title:
-                title = str(shape).split('/')[-1].replace('#', '').replace('_', ' ')
+            # Keep title empty when no explicit title/name exists in imported TTL.
             
             # Determine if this is a dataset or class
             node_id = str(uuid.uuid4())
@@ -5473,13 +5539,7 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 if not title and labels:
                     title = str(labels[0])
             
-            if not title:
-                # Extract from path
-                paths = list(g.objects(prop_shape, SH.path))
-                if paths:
-                    title = str(paths[0]).split('/')[-1].replace('#', '').replace('_', ' ')
-                else:
-                    title = str(prop_shape).split('/')[-1].replace('#', '').replace('_', ' ')
+            # Keep title empty when no explicit title/name exists in imported TTL.
             
             # Extract description
             description = ""
@@ -5746,7 +5806,7 @@ def _process_csv_ttl_import(editor, ttl: str, source_filename: str, dataset_name
             prop_name = str(name)
             break
         if not prop_name:
-            prop_name = str(shape).split('/')[-1]
+            prop_name = ""
 
         datatype = None
         for _, _, dt in g.triples((shape, SH.datatype, None)):
@@ -6116,6 +6176,10 @@ def import_xsd():
                     return str(v)
                 for _, _, v in g.triples((uri, RDFS.label, None)):
                     return str(v)
+                return ""
+
+            # Helper: extract identifier from URI fallback when no sh:name exists
+            def _get_identifier(uri):
                 return str(uri).split('/')[-1].split('#')[-1]
 
             # Helper: extract best description
@@ -6133,6 +6197,12 @@ def import_xsd():
                     if 'XMLSchema#' in dt:
                         dt = 'xsd:' + dt.split('#')[-1]
                     node.datatype = dt
+                    break
+                for _, _, v in g.triples((uri, SH.order, None)):
+                    try:
+                        node.order = int(v)
+                    except (ValueError, TypeError):
+                        node.order = None
                     break
                 for _, _, v in g.triples((uri, SH.minCount, None)):
                     try: node.min_count = int(v)
@@ -6174,13 +6244,14 @@ def import_xsd():
 
             for shape_uri in node_shapes:
                 node_name = _get_name(shape_uri)
+                node_identifier = _get_identifier(shape_uri)
                 description = _get_desc(shape_uri)
                 shacl_node = SHACLNode('class', title=node_name, description=description)
-                shacl_node.local_name = node_name  # identifier = xs:element name
-                shacl_node.identifier = node_name   # populate the editable identifier field
+                shacl_node.local_name = node_identifier
+                shacl_node.identifier = node_identifier
                 editor.nodes[shacl_node.id] = shacl_node
                 processed_nodes[str(shape_uri)] = shacl_node
-                print(f"Created class node: {node_name}")
+                print(f"Created class node: {node_identifier}")
 
             # --- Pass 2: create data_element nodes for PropertyShapes inside each class ---
             for shape_uri in node_shapes:
@@ -6188,6 +6259,7 @@ def import_xsd():
 
                 for _, _, prop_uri in g.triples((shape_uri, SH.property, None)):
                     prop_name = _get_name(prop_uri)
+                    prop_identifier = _get_identifier(prop_uri)
                     description = _get_desc(prop_uri)
 
                     # If this PropertyShape has sh:node pointing to a known class,
@@ -6210,7 +6282,7 @@ def import_xsd():
 
                     # Regular data element
                     de_node = SHACLNode('data_element', title=prop_name, description=description)
-                    de_node.local_name = prop_name
+                    de_node.local_name = prop_identifier
                     _apply_prop_constraints(de_node, prop_uri)
 
                     editor.nodes[de_node.id] = de_node

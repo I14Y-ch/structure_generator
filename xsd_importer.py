@@ -159,7 +159,8 @@ def handle_sequence(sequence, xsd_root, graph, parent_shape, parent_type_name, I
     if sequence is None:
         return
     
-    order = 0
+    # Keep XSD sequence position so UI display order and SHACL export remain stable.
+    order = 1
     for element in sequence.findall('{http://www.w3.org/2001/XMLSchema}element'):
         element_name = element.get('name')
         if element_name:
@@ -171,6 +172,7 @@ def handle_sequence(sequence, xsd_root, graph, parent_shape, parent_type_name, I
             
             # Process element details
             process_element_details(element, xsd_root, graph, prop_shape, I14Y, type_map)
+            graph.add((prop_shape, SH.order, Literal(order, datatype=XSD.integer)))
             
             graph.add((parent_shape, SH.property, prop_shape))
             order += 1

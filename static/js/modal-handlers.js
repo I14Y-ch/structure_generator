@@ -1538,11 +1538,19 @@ function selectI14YDatasetResult(index) {
 }
 
 function getSingleSelectedNode() {
-    const candidates = [];
-
+    // Prefer the explicitly selected node from the details/sidebar state.
+    // This avoids false negatives when multi-select state is stale.
     if (window.selectedNodeId) {
-        candidates.push({ id: window.selectedNodeId });
+        if (typeof selectedNodes !== 'undefined' && Array.isArray(selectedNodes)) {
+            const exact = selectedNodes.find(node => node && typeof node === 'object' && node.id === window.selectedNodeId);
+            if (exact) {
+                return { id: exact.id, type: exact.type };
+            }
+        }
+        return { id: window.selectedNodeId };
     }
+
+    const candidates = [];
 
     if (typeof selectedNodes !== 'undefined' && selectedNodes) {
         const networkSelection = Array.isArray(selectedNodes)
