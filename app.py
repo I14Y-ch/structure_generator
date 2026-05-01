@@ -6,10 +6,12 @@ import json
 import os
 import tempfile
 import requests
+import re
 import uuid
 import threading
 import time
 import chardet
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 import csv
@@ -1178,14 +1180,35 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
                    next(iter(value.values()), ""))
         return str(value)
     
-    # Generate a normalized dataset ID from title
+    def slug_id(value: str, fallback: str = "property") -> str:
+        """Build a lowercase ASCII-safe identifier for use in the dataset namespace prefix."""
+        raw = (value or "").strip()
+        if not raw:
+            return fallback
+
+        normalized = unicodedata.normalize("NFKD", raw)
+        ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+        slug = ascii_text.replace(" ", "_").replace("-", "_")
+        slug = re.sub(r"[^A-Za-z0-9_]", "", slug)
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return slug.lower() or fallback
+
+    def preserve_id(value: str, fallback: str = "property") -> str:
+        """ASCII-safe identifier preserving original casing, used for class/property IRI segments."""
+        raw = (value or "").strip()
+        if not raw:
+            return fallback
+
+        normalized = unicodedata.normalize("NFKD", raw)
+        ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+        slug = ascii_text.replace(" ", "_").replace("-", "_")
+        slug = re.sub(r"[^A-Za-z0-9_]", "", slug)
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return slug or fallback
+
+    # Generate a normalized ASCII dataset ID from title
     dataset_title_str = get_text_value(dataset_node.title, 'de')
-    dataset_id = dataset_title_str.lower().replace(' ', '_').replace('-', '_')
-    for ch in "()":
-        dataset_id = dataset_id.replace(ch, "")
-    while "__" in dataset_id:
-        dataset_id = dataset_id.replace("__", "_")
-    dataset_id = dataset_id.strip("_") or "dataset"
+    dataset_id = slug_id(dataset_title_str, fallback="dataset")
 
     # Create RDF graph
     g = Graph()
@@ -1228,6 +1251,18 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         uri_lang_tracker[key] = sanitized_content
         return True
     
+    def normalize_concept_uri(uri_str: str) -> str:
+        """Normalize any i14y concept URI to the canonical form used in exports.
+        Target format: https://www.i14y.admin.ch/en/catalog/concepts/{uuid}
+        """
+        uuid_match = re.search(
+            r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
+            uri_str, re.IGNORECASE
+        )
+        if uuid_match:
+            return f"https://www.i14y.admin.ch/en/catalog/concepts/{uuid_match.group(1)}"
+        return uri_str
+
     def safe_add_conforms_to(uri, node):
         """Safely add dcterms:conformsTo if node has concept reference"""
         conforms_to_uri = None
@@ -1240,6 +1275,8 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             conforms_to_uri = node.i14y_concept_uri
             
         if conforms_to_uri:
+            # Normalize to canonical example format
+            conforms_to_uri = normalize_concept_uri(conforms_to_uri)
             # Check if already exists to prevent duplicates
             existing = list(g.triples((uri, DCTERMS.conformsTo, URIRef(conforms_to_uri))))
             if not existing:
@@ -1256,22 +1293,13 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         return cleaned.replace('"', '\\"')
 
     def norm_id(label) -> str:
-        """Normalize a label (string or multilingual dict) to a valid ID"""
-        # Extract text value if it's a multilingual dict
+        """Normalize a label (string or multilingual dict) to a valid ID, preserving original casing."""
         if isinstance(label, dict):
             base = get_text_value(label, 'de')
         else:
             base = (label or "").strip()
-            
-        if not base:
-            base = "property"
-        base = base.replace(" ", "_").replace("-", "_")
-        # remove parentheses and duplicate underscores
-        for ch in "()":
-            base = base.replace(ch, "")
-        while "__" in base:
-            base = base.replace("__", "_")
-        return base.strip("_") or "property"
+
+        return preserve_id(base, fallback="property")
 
     # Create dataset NodeShape
     dataset_shape = URIRef(f"{i14y_ns}{dataset_id}")
@@ -1343,12 +1371,14 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
     for class_node in connected_classes:
         class_id = norm_id(class_node.title)
-        class_uri = URIRef(f"{i14y_ns}{class_id}")  # Use class name directly without "Type" suffix
+        # Append 'Type' suffix if not already present (case-insensitive check)
+        class_type_id = class_id if class_id.lower().endswith("type") else f"{class_id}Type"
+        class_uri = URIRef(f"{i14y_ns}{class_type_id}")
 
         # Create NodeShape for the class
         g.add((class_uri, RDF.type, RDFS.Class))
         g.add((class_uri, RDF.type, SH.NodeShape))
-        g.add((class_uri, SH.closed, Literal(True)))
+        g.add((class_uri, SH.targetClass, class_uri))
 
         # Add class metadata with multilingual support
         if isinstance(class_node.title, dict):
@@ -1390,8 +1420,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         class_property_uris = []
         for concept in class_concepts:
             concept_id = norm_id(concept.title)
-            # Use the full I14Y URI pattern
-            property_uri = URIRef(f"{i14y_ns}{concept_id}/{concept_id}")
+            property_uri = URIRef(f"{i14y_ns}{class_type_id}/{concept_id}")
 
             # Create PropertyShape
             g.add((property_uri, RDF.type, SH.PropertyShape))
@@ -1484,8 +1513,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         
         for data_element in class_data_elements_sorted:
             element_id = norm_id(data_element.local_name or data_element.title)
-            # Use the full I14Y URI pattern 
-            property_uri = URIRef(f"{i14y_ns}{element_id}/{element_id}")
+            property_uri = URIRef(f"{i14y_ns}{class_type_id}/{element_id}")
 
             # Create PropertyShape
             g.add((property_uri, RDF.type, SH.PropertyShape))
@@ -1600,7 +1628,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     # Add property references for concepts directly connected to dataset
     for concept in connected_concepts:
         concept_id = norm_id(concept.title)
-        # Use the full I14Y URI pattern with dataset_id path
         property_uri = URIRef(f"{i14y_ns}{dataset_id}/{concept_id}")
 
         # Create PropertyShape
@@ -1694,7 +1721,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     
     for data_element in connected_data_elements_sorted:
         element_id = norm_id(data_element.local_name or data_element.title)
-        # Use the full I14Y URI pattern with dataset_id path
         property_uri = URIRef(f"{i14y_ns}{dataset_id}/{element_id}")
 
         # Create PropertyShape
@@ -1807,6 +1833,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((dataset_shape, SH.property, property_uri))
     for class_node in connected_classes:
         class_id = norm_id(class_node.title)
+        class_type_id = class_id if class_id.lower().endswith("type") else f"{class_id}Type"
         class_uri = class_properties[class_node.id]
         # Create a property shape that references the class
         property_uri = URIRef(f"{i14y_ns}{dataset_id}/{class_id}")
@@ -1814,7 +1841,8 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         # Create PropertyShape for class
         g.add((property_uri, RDF.type, SH.PropertyShape))
         g.add((property_uri, RDF.type, OWL.ObjectProperty))
-        g.add((property_uri, SH.path, property_uri))
+        # Object-property path points to the class resource path in i14y namespace.
+        g.add((property_uri, SH.path, URIRef(f"{i14y_ns}{class_id}")))
 
         # Add advanced SHACL constraints for classes
         if class_node.min_count is not None:
