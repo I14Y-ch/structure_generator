@@ -4927,41 +4927,30 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 dataset_shape = shape
                 break
         
+        def _collect_multilingual(literals, fallback_literals=None):
+            """Collect all language-tagged literals into a dict; fall back to untagged as 'de'."""
+            result = {}
+            source = literals if literals else (fallback_literals or [])
+            for lit in source:
+                lang = getattr(lit, 'language', None)
+                if lang:
+                    result[lang] = str(lit)
+            if not result:
+                # No language tags — use first available as 'de' fallback
+                if source:
+                    result['de'] = str(source[0])
+            return result
+
         # First pass: Create dataset and class nodes
         for shape in node_shapes:
             # Get basic properties
             titles = list(g.objects(shape, DCTERMS.title))
             labels = list(g.objects(shape, SH.name)) or list(g.objects(shape, RDFS.label))
             descriptions = list(g.objects(shape, DCTERMS.description)) or list(g.objects(shape, SH.description))
-            
-            # Extract title (prefer German, fallback to any language)
-            title = ""
-            if titles:
-                for t in titles:
-                    if hasattr(t, 'language') and t.language == 'de':
-                        title = str(t)
-                        break
-                if not title and titles:
-                    title = str(titles[0])
-            elif labels:
-                for l in labels:
-                    if hasattr(l, 'language') and l.language == 'de':
-                        title = str(l)
-                        break
-                if not title and labels:
-                    title = str(labels[0])
-            
-            # Extract description
-            description = ""
-            if descriptions:
-                for d in descriptions:
-                    if hasattr(d, 'language') and d.language == 'de':
-                        description = str(d)
-                        break
-                if not description and descriptions:
-                    description = str(descriptions[0])
-            
-            # Keep title empty when no explicit title/name exists in imported TTL.
+
+            # Collect all available language variants
+            title = _collect_multilingual(titles, labels)
+            description = _collect_multilingual(descriptions)
             
             # Determine if this is a dataset or class
             node_id = str(uuid.uuid4())
@@ -4982,7 +4971,8 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             editor.nodes[node_id] = node
             created_nodes[str(shape)] = node_id
             
-            print(f"Created {node_type}: {title}")
+            display_title = title.get('de') or next(iter(title.values()), '') if isinstance(title, dict) else title
+            print(f"Created {node_type}: {display_title}")
         
         # Second pass: Create data element nodes from PropertyShapes
         property_shapes = list(g.subjects(RDF.type, SH.PropertyShape))
@@ -4995,35 +4985,10 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             titles = list(g.objects(prop_shape, DCTERMS.title))
             labels = list(g.objects(prop_shape, SH.name)) or list(g.objects(prop_shape, RDFS.label))
             descriptions = list(g.objects(prop_shape, DCTERMS.description)) or list(g.objects(prop_shape, SH.description))
-            
-            # Extract title
-            title = ""
-            if titles:
-                for t in titles:
-                    if hasattr(t, 'language') and t.language == 'de':
-                        title = str(t)
-                        break
-                if not title and titles:
-                    title = str(titles[0])
-            elif labels:
-                for l in labels:
-                    if hasattr(l, 'language') and l.language == 'de':
-                        title = str(l)
-                        break
-                if not title and labels:
-                    title = str(labels[0])
-            
-            # Keep title empty when no explicit title/name exists in imported TTL.
-            
-            # Extract description
-            description = ""
-            if descriptions:
-                for d in descriptions:
-                    if hasattr(d, 'language') and d.language == 'de':
-                        description = str(d)
-                        break
-                if not description and descriptions:
-                    description = str(descriptions[0])
+
+            # Collect all available language variants
+            title = _collect_multilingual(titles, labels)
+            description = _collect_multilingual(descriptions)
             
             # Extract constraints
             min_count = None
@@ -5077,6 +5042,15 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                     else:
                         break
             
+            # Read sh:order
+            order = None
+            order_vals = list(g.objects(prop_shape, SH.order))
+            if order_vals:
+                try:
+                    order = int(order_vals[0])
+                except (ValueError, TypeError):
+                    pass
+
             # Check for conformsTo to identify data elements with concept links
             conforms_to_uris = list(g.objects(prop_shape, DCTERMS.conformsTo))
             conforms_to_uri = conforms_to_uris[0] if conforms_to_uris else None
@@ -5094,7 +5068,8 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                 'max_length': max_length,
                 'pattern': pattern,
                 'datatype': datatype or 'xsd:string',
-                'in_values': in_values
+                'in_values': in_values,
+                'order': order
             }
             
             # If this is an object property pointing to a class, handle it differently
@@ -5107,7 +5082,8 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                         # The class has already been created, so just store the reference
                         # We'll create connections in the next pass
                         created_nodes[str(prop_shape)] = created_nodes[target_class_uri]
-                        print(f"Mapped object property {title} to class reference")
+                        _dt = title.get('de') or next(iter(title.values()), '') if isinstance(title, dict) else title
+                        print(f"Mapped object property {_dt} to class reference")
                         continue
             
             # Add the local_name for the data element (from path or extracted from shape URI)
@@ -5132,10 +5108,11 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
             created_nodes[str(prop_shape)] = node_id
             
             # Log message based on whether it has a concept link
+            _dt = title.get('de') or next(iter(title.values()), '') if isinstance(title, dict) else title
             if conforms_to_uri:
-                print(f"Created data element with concept link: {title}")
+                print(f"Created data element with concept link: {_dt}")
             else:
-                print(f"Created data element: {title}")
+                print(f"Created data element: {_dt}")
         
         # Third pass: Create connections based on sh:property relationships
         for shape in node_shapes:
@@ -5167,7 +5144,8 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
                             cardinality = f"{min_c}..{max_c}"
                     
                     editor.create_edge(shape_node_id, prop_node_id, cardinality)
-                    print(f"Connected {editor.nodes[shape_node_id].title} -> {editor.nodes[prop_node_id].title} ({cardinality})")
+                    def _dt(t): return t.get('de') or next(iter(t.values()), '') if isinstance(t, dict) else t
+                    print(f"Connected {_dt(editor.nodes[shape_node_id].title)} -> {_dt(editor.nodes[prop_node_id].title)} ({cardinality})")
         
         # Connect everything to dataset if we have one
         if dataset_node:
