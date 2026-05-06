@@ -373,11 +373,11 @@ class I14YAPIClient:
         """
         url = f"{self.base_url}/datasets/{dataset_id}"
         print(f"Fetching dataset details from: {url}")
-        
+
         try:
             response = requests.get(url, timeout=10)
             print(f"API response status code: {response.status_code}")
-            
+
             if response.status_code == 200:
                 data = response.json()
                 print(f"Received valid dataset data with keys: {data.keys() if isinstance(data, dict) else 'not a dict'}")
@@ -396,41 +396,7 @@ class I14YAPIClient:
         except Exception as e:
             print(f"Error getting dataset details: {e}")
             return None
-        try:
-            response = requests.get(url, timeout=10)
-            print(f"Status: {response.status_code}")
-            print(f"Headers: {dict(response.headers)}")
-            print(f"Content length: {len(response.content)} bytes")
-            print(f"Content type: {response.headers.get('content-type')}")
-            
-            if response.status_code == 200:
-                print("Raw content preview:")
-                print(response.text[:1000])
-                print("---")
-                
-                try:
-                    data = response.json()
-                    print(f"JSON parsed successfully: {type(data)}")
-                    if isinstance(data, dict):
-                        print(f"Keys: {list(data.keys())}")
-                        for key, value in data.items():
-                            print(f"  {key}: {type(value)} - {str(value)[:100]}")
-                    elif isinstance(data, list):
-                        print(f"List with {len(data)} items")
-                        if data:
-                            print(f"First item: {data[0]}")
-                    return data
-                except Exception as e:
-                    print(f"JSON parse error: {e}")
-                    return None
-            else:
-                print(f"Error response: {response.text}")
-                return None
-                
-        except Exception as e:
-            print(f"Request error: {e}")
-            return None
-    
+
     def get_public_dataset_details(self, dataset_id: str) -> Optional[Dict]:
         """Fetch dataset details from the public I14Y API (api.i14y.admin.ch).
         This endpoint returns the 'identifiers' list with human-readable identifiers."""
@@ -456,13 +422,13 @@ class I14YAPIClient:
     def extract_constraints_from_concept(self, concept_data: Dict) -> Dict:
         """Extract SHACL constraints from I14Y concept data"""
         constraints = {}
-        
+
         # Extract pattern from concept if available
         if 'pattern' in concept_data:
             pattern = concept_data['pattern']
             if pattern and isinstance(pattern, str):
                 constraints['pattern'] = pattern
-        
+
         # Extract enumeration from codelist if concept has one
         concept_id = concept_data.get('id')
         if concept_id:
@@ -474,13 +440,13 @@ class I14YAPIClient:
                     print(f"Processing codelist entry: {entry}")
                     # Try different possible value fields in order of preference
                     value = None
-                    
+
                     # Check for common field names
                     for field_name in ['code', 'value', 'identifier', 'id', 'key', 'Code', 'Value']:
                         if field_name in entry and entry[field_name]:
                             value = str(entry[field_name])
                             break
-                    
+
                     # If no direct value found, check for multilingual values
                     if not value:
                         for field_name in ['name', 'title', 'label', 'Name', 'Title', 'Label']:
@@ -488,20 +454,20 @@ class I14YAPIClient:
                                 field_value = entry[field_name]
                                 if isinstance(field_value, dict):
                                     # Multilingual field - try different languages
-                                    value = (field_value.get('de') or 
-                                            field_value.get('en') or 
-                                            field_value.get('fr') or 
+                                    value = (field_value.get('de') or
+                                            field_value.get('en') or
+                                            field_value.get('fr') or
                                             field_value.get('it'))
                                 elif field_value:
                                     value = str(field_value)
-                                
+
                                 if value:
                                     break
-                    
+
                     if value:
                         enum_values.append(value)
                         print(f"Added enum value: {value}")
-                
+
                 if enum_values:
                     # Sort enumeration values (numerically if all numeric, else alphabetically)
                     sorted_values = sort_enumeration_values(enum_values)
@@ -509,28 +475,28 @@ class I14YAPIClient:
                     print(f"Found {len(sorted_values)} codelist entries for concept {concept_id}: {sorted_values}")
                 else:
                     print(f"No usable values found in codelist entries for concept {concept_id}")
-        
+
         # Extract datatype constraints from I14Y concept data
         datatype = self._extract_datatype_from_i14y(concept_data)
         if datatype:
             constraints['datatype'] = datatype
             print(f"Extracted datatype from I14Y: {datatype}")
-        
+
         # Extract length constraints if available
         if 'minLength' in concept_data:
             try:
                 constraints['min_length'] = int(concept_data['minLength'])
             except (ValueError, TypeError):
                 pass
-        
+
         if 'maxLength' in concept_data:
             try:
                 constraints['max_length'] = int(concept_data['maxLength'])
             except (ValueError, TypeError):
                 pass
-        
+
         return constraints
-    
+
     def _extract_datatype_from_i14y(self, concept_data: Dict) -> Optional[str]:
         """Extract XSD datatype from I14Y concept data"""
         # Check direct datatype field
@@ -553,7 +519,7 @@ class I14YAPIClient:
                     return 'xsd:decimal'
                 elif 'uri' in datatype_lower or 'url' in datatype_lower:
                     return 'xsd:anyURI'
-        
+
         # Check conceptValueType
         concept_type = concept_data.get('conceptValueType', '').lower()
         if concept_type:
@@ -570,7 +536,7 @@ class I14YAPIClient:
                 return 'xsd:string'
             elif 'uri' in concept_type or 'url' in concept_type:
                 return 'xsd:anyURI'
-        
+
         # Check for format hints
         if 'format' in concept_data:
             format_hint = str(concept_data['format']).lower()
@@ -580,22 +546,22 @@ class I14YAPIClient:
                 return 'xsd:anyURI'
             elif 'email' in format_hint:
                 return 'xsd:string'  # Could be more specific with pattern
-        
+
         # Fallback: analyze title and description for datatype hints
         title_lower = concept_data.get('title', {})
         if isinstance(title_lower, dict):
             title_text = ' '.join(str(v) for v in title_lower.values()).lower()
         else:
             title_text = str(title_lower).lower()
-            
+
         description_lower = concept_data.get('description', {})
         if isinstance(description_lower, dict):
             desc_text = ' '.join(str(v) for v in description_lower.values()).lower()
         else:
             desc_text = str(description_lower).lower()
-        
+
         combined_text = f"{title_text} {desc_text}"
-        
+
         # Pattern-based detection
         if any(word in combined_text for word in ['date', 'datum', 'birth', 'geburt', 'naissance', 'nascita']):
             if any(word in combined_text for word in ['time', 'zeit', 'heure', 'ora']):
@@ -608,9 +574,9 @@ class I14YAPIClient:
             return 'xsd:boolean'
         elif any(word in combined_text for word in ['url', 'uri', 'link', 'website', 'webpage']):
             return 'xsd:anyURI'
-        
+
         return None
-    
+
     def get_concept_schemes(self) -> List[Dict]:
         """Get all concept schemes from I14Y API"""
         try:
@@ -1338,6 +1304,25 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         return preserve_id(base, fallback="property")
 
+    def node_export_id(node) -> str:
+        """Resolve URI segment from explicit identifier only."""
+        identifier = getattr(node, 'identifier', None)
+        if isinstance(identifier, dict):
+            identifier = get_text_value(identifier, 'de')
+
+        text = str(identifier).strip() if identifier is not None else ""
+        if not text:
+            node_type = getattr(node, 'type', 'unknown')
+            node_title = getattr(node, 'title', '')
+            if isinstance(node_title, dict):
+                node_title = get_text_value(node_title, 'de')
+            raise ValueError(
+                f"Missing identifier for node type '{node_type}' with title '{node_title}'. "
+                "Identifier is required for URI generation."
+            )
+
+        return norm_id(text)
+
     # Create dataset NodeShape
     dataset_shape = URIRef(f"{i14y_ns}{dataset_id}")
     g.add((dataset_shape, RDF.type, SH.NodeShape))
@@ -1394,7 +1379,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     rdf_list_counter = 0  # For generating unique RDF list IDs
 
     for class_node in connected_classes:
-        class_id = norm_id(class_node.title)
+        class_id = node_export_id(class_node)
         # Append 'Type' suffix if not already present (case-insensitive check)
         class_type_id = class_id if class_id.lower().endswith("type") else f"{class_id}Type"
         class_uri = URIRef(f"{i14y_ns}{class_type_id}")
@@ -1434,7 +1419,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         # Create property shapes for concepts belonging to this class
         class_property_uris = []
         for concept in class_concepts:
-            concept_id = norm_id(concept.title)
+            concept_id = node_export_id(concept)
             property_uri = URIRef(f"{i14y_ns}{class_type_id}/{concept_id}")
 
             # Create PropertyShape
@@ -1527,7 +1512,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         )
         
         for data_element in class_data_elements_sorted:
-            element_id = norm_id(data_element.local_name or data_element.title)
+            element_id = node_export_id(data_element)
             property_uri = URIRef(f"{i14y_ns}{class_type_id}/{element_id}")
 
             # Create PropertyShape
@@ -1647,7 +1632,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
     # Add property references for concepts directly connected to dataset
     for concept in connected_concepts:
-        concept_id = norm_id(concept.title)
+        concept_id = node_export_id(concept)
         property_uri = URIRef(f"{i14y_ns}{dataset_id}/{concept_id}")
 
         # Create PropertyShape
@@ -1740,7 +1725,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     )
     
     for data_element in connected_data_elements_sorted:
-        element_id = norm_id(data_element.local_name or data_element.title)
+        element_id = node_export_id(data_element)
         property_uri = URIRef(f"{i14y_ns}{dataset_id}/{element_id}")
 
         # Create PropertyShape
@@ -1852,7 +1837,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         # Add to dataset properties
         g.add((dataset_shape, SH.property, property_uri))
     for class_node in connected_classes:
-        class_id = norm_id(class_node.title)
+        class_id = node_export_id(class_node)
         class_type_id = class_id if class_id.lower().endswith("type") else f"{class_id}Type"
         class_uri = class_properties[class_node.id]
         # Create a property shape that references the class
@@ -2301,493 +2286,6 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             messagebox.showinfo("Export Successful", f"TTL file exported to {file_path}")
         except Exception as e:
             messagebox.showerror("Export Error", f"Error exporting TTL file: {str(e)}")
-    
-    def generate_ttl(self) -> str:
-        """Generate TTL content from the current graph in I14Y format using RDF graph approach"""
-        # Find dataset node
-        dataset_node = None
-        for node in self.nodes.values():
-            if node.type == 'dataset':
-                dataset_node = node
-                break
-
-        if not dataset_node:
-            return "# No dataset found"
-
-        # Helper function to extract text from multilingual objects or strings
-        def get_text_value(value, lang='de'):
-            """Extract text from a value that might be a string or multilingual dict"""
-            if value is None:
-                return ""
-            if isinstance(value, dict):
-                # Try requested language first, then fallback chain
-                return (value.get(lang) or 
-                       value.get('de') or 
-                       value.get('en') or 
-                       value.get('fr') or 
-                       value.get('it') or 
-                       next(iter(value.values()), ""))
-            return str(value)
-
-        # Generate proper I14Y dataset ID - normalize
-        raw_ds = get_text_value(dataset_node.title, 'de').strip() or "dataset"
-        dataset_id = raw_ds.upper().replace(" ", "_").replace("-", "_")
-
-        # Create RDF graph
-        g = Graph()
-
-        # Bind namespaces
-        i14y_ns = Namespace(f"https://www.i14y.admin.ch/resources/datasets/{dataset_id}/structure/")
-        QB = Namespace("http://purl.org/linked-data/cube#")
-        g.bind("rdf", RDF)
-        g.bind("rdfs", RDFS)
-        g.bind("xsd", XSD)
-        g.bind("dcterms", DCTERMS)
-        g.bind("sh", SH)
-        g.bind("owl", OWL)
-        g.bind("QB", QB)
-        g.bind("i14y", i14y_ns)
-
-        # Global tracking to prevent duplicate language tags for the same URI and property
-        uri_lang_tracker = {}  # Format: {(uri, property, lang): content}
-        
-        def safe_add_multilingual_property(uri, property_type, content, lang):
-            """Safely add a multilingual property, preventing duplicates for same URI+property+lang"""
-            if not content or lang not in ['de', 'fr', 'it', 'en']:
-                return False
-                
-            key = (str(uri), str(property_type), lang)
-            if key in uri_lang_tracker:
-                # Already exists for this URI+property+language - skip
-                return False
-            
-            # Add to graph and track
-            g.add((uri, property_type, Literal(content, lang=lang)))
-            uri_lang_tracker[key] = content
-            return True
-
-        # Helper functions
-        def sanitize_literal(text: str) -> str:
-            if text is None:
-                return ""
-            # Collapse whitespace/newlines and escape quotes
-            cleaned = " ".join(str(text).split())
-            return cleaned.replace('"', '\\"')
-
-        def norm_id(label) -> str:
-            """Normalize a label (string or multilingual dict) to a valid ID"""
-            # Extract text value if it's a multilingual dict
-            if isinstance(label, dict):
-                base = get_text_value(label, 'de')
-            else:
-                base = (label or "").strip()
-                
-            if not base:
-                base = "property"
-            base = base.replace(" ", "_").replace("-", "_")
-            # remove parentheses and duplicate underscores
-            for ch in "()":
-                base = base.replace(ch, "")
-            while "__" in base:
-                base = base.replace("__", "_")
-            return base.strip("_") or "property"
-
-        # Create dataset NodeShape
-        dataset_shape = URIRef(f"{i14y_ns}{dataset_id}")
-        g.add((dataset_shape, RDF.type, SH.NodeShape))
-        g.add((dataset_shape, RDF.type, RDFS.Class))
-        g.add((dataset_shape, RDF.type, QB.DataStructureDefinition))
-        g.add((dataset_shape, SH.closed, Literal(True)))
-
-        # Add dataset metadata with multilingual support
-        if isinstance(dataset_node.title, dict):
-            # Multilingual title - add all available languages
-            for lang in ['de', 'fr', 'it', 'en']:
-                if lang in dataset_node.title and dataset_node.title[lang]:
-                    title_text = sanitize_literal(dataset_node.title[lang])
-                    safe_add_multilingual_property(dataset_shape, DCTERMS.title, title_text, lang)
-                    safe_add_multilingual_property(dataset_shape, RDFS.label, title_text, lang)
-                    safe_add_multilingual_property(dataset_shape, SH.name, title_text, lang)
-        else:
-            # Single language title
-            ds_title = sanitize_literal(dataset_node.title)
-            if ds_title:
-                safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, "de")
-                safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, "de")
-                safe_add_multilingual_property(dataset_shape, SH.name, ds_title, "de")
-
-        if isinstance(dataset_node.description, dict):
-            # Multilingual description - add all available languages
-            for lang in ['de', 'fr', 'it', 'en']:
-                if lang in dataset_node.description and dataset_node.description[lang]:
-                    desc_text = sanitize_literal(dataset_node.description[lang])
-                    safe_add_multilingual_property(dataset_shape, DCTERMS.description, desc_text, lang)
-                    safe_add_multilingual_property(dataset_shape, RDFS.comment, desc_text, lang)
-                    g.add((dataset_shape, SH.description, Literal(desc_text, lang=lang)))
-        else:
-            # Single language description
-            ds_desc = sanitize_literal(dataset_node.description)
-            if ds_desc:
-                safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, "de")
-                safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, "de")
-                g.add((dataset_shape, SH.description, Literal(ds_desc, lang="de")))
-
-        # Add dataset identifier if available
-        if dataset_node.identifier:
-            identifier_text = sanitize_literal(dataset_node.identifier)
-            g.add((dataset_shape, DCTERMS.identifier, Literal(identifier_text)))
-
-        # Collect concepts and classes connected to dataset
-        connected_concepts = []
-        connected_classes = []
-
-        for conn_id in dataset_node.connections:
-            if conn_id in self.nodes:
-                connected_node = self.nodes[conn_id]
-                if connected_node.type == 'concept':
-                    connected_concepts.append(connected_node)
-                elif connected_node.type == 'class':
-                    connected_classes.append(connected_node)
-
-        # Add property references and create property shapes
-        rdf_list_counter = 0  # For generating unique RDF list IDs
-
-        for concept in connected_concepts:
-            concept_id = norm_id(concept.title)
-            property_uri = URIRef(f"{i14y_ns}{concept_id}")
-
-            # Create PropertyShape
-            g.add((property_uri, RDF.type, SH.PropertyShape))
-            g.add((property_uri, RDF.type, OWL.DatatypeProperty))
-            g.add((property_uri, RDF.type, QB.AttributeProperty))
-            g.add((property_uri, SH.path, property_uri))
-            g.add((property_uri, SH.datatype, URIRef(concept.datatype)))
-
-            # Add I14Y concept reference if available
-            safe_add_conforms_to(property_uri, concept)
-
-            # Add advanced SHACL constraints
-            if concept.min_count is not None:
-                g.add((property_uri, SH.minCount, Literal(concept.min_count, datatype=XSD.integer)))
-            if concept.max_count is not None:
-                g.add((property_uri, SH.maxCount, Literal(concept.max_count, datatype=XSD.integer)))
-            if concept.min_length is not None:
-                g.add((property_uri, SH.minLength, Literal(concept.min_length, datatype=XSD.integer)))
-            if concept.max_length is not None:
-                g.add((property_uri, SH.maxLength, Literal(concept.max_length, datatype=XSD.integer)))
-            if concept.pattern:
-                g.add((property_uri, SH.pattern, Literal(concept.pattern)))
-            if concept.range:
-                g.add((property_uri, RDFS.range, URIRef(concept.range)))
-
-            # Add enumeration values (sh:in)
-            if concept.in_values:
-                # Add QB:CodedProperty for enumerated values
-                g.add((property_uri, RDF.type, QB.CodedProperty))
-                
-                # Create RDF list for enumeration values
-                list_head = URIRef(f"_:autos{rdf_list_counter}")
-                rdf_list_counter += 1
-                g.add((property_uri, SH['in'], list_head))
-
-                # Create RDF list items
-                current = list_head
-                for i, value in enumerate(concept.in_values[:-1]):
-                    next_item = URIRef(f"_:autos{rdf_list_counter}")
-                    rdf_list_counter += 1
-                    g.add((current, RDF.first, Literal(value)))
-                    g.add((current, RDF.rest, next_item))
-                    current = next_item
-
-                # Last item
-                if concept.in_values:
-                    g.add((current, RDF.first, Literal(concept.in_values[-1])))
-                    g.add((current, RDF.rest, RDF.nil))
-
-            # Add class reference (sh:node)
-            if concept.node_reference:
-                g.add((property_uri, SH.node, URIRef(concept.node_reference)))
-
-            # Add multilingual titles and descriptions
-            titles = concept.get_multilingual_title()
-            descriptions = concept.get_multilingual_description()
-
-            for lang, title in titles.items():
-                if title and lang in ['de', 'fr', 'it', 'en']:
-                    # Use safe method to prevent duplicates
-                    sanitized_title = sanitize_literal(title)
-                    safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
-                    safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
-                    safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
-
-            for lang, desc in descriptions.items():
-                # Only add the first value per language for each property
-                if desc and lang in ['de', 'fr', 'it', 'en']:
-                    sanitized_desc = sanitize_literal(desc)
-                    # Use safe method to prevent duplicates
-                    safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
-                    safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
-                    safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
-
-            # Add to dataset properties
-            g.add((dataset_shape, SH.property, property_uri))
-
-        # Generate property shapes for classes
-        for class_node in connected_classes:
-            class_id = norm_id(class_node.title)
-            class_uri = URIRef(f"{i14y_ns}{class_id}Type")  # Must match the class definition with Type suffix
-            # Property URI should be in the dataset namespace
-            property_uri = URIRef(f"{i14y_ns}{dataset_id}/{class_id}")
-
-            # Create PropertyShape for class reference in dataset
-            g.add((property_uri, RDF.type, SH.PropertyShape))
-            g.add((property_uri, RDF.type, OWL.ObjectProperty))
-            g.add((property_uri, SH.path, property_uri))
-
-            # Add advanced SHACL constraints for classes
-            if class_node.min_count is not None:
-                g.add((property_uri, SH.minCount, Literal(class_node.min_count)))
-            else:
-                # Add default minCount 1 for class references to indicate 1:1 relationship
-                g.add((property_uri, SH.minCount, Literal(1)))
-                
-            if class_node.max_count is not None:
-                g.add((property_uri, SH.maxCount, Literal(class_node.max_count)))
-            else:
-                # Add default maxCount 1 for class references to indicate 1:1 relationship
-                g.add((property_uri, SH.maxCount, Literal(1)))
-
-            # Link to the class NodeShape
-            g.add((property_uri, SH.node, class_uri))
-
-            # Add multilingual titles and descriptions
-            titles = class_node.get_multilingual_title()
-            descriptions = class_node.get_multilingual_description()
-
-            # Ensure we always have at least a basic label
-            # Handle both string and dict title formats
-            if isinstance(class_node.title, dict):
-                class_title = sanitize_literal(get_text_value(class_node.title, 'de'))
-            else:
-                class_title = sanitize_literal(class_node.title)
-                
-            if class_title:
-                # Add basic German label as fallback (required for I14Y visualization)
-                safe_add_multilingual_property(property_uri, RDFS.label, class_title, "de")
-                safe_add_multilingual_property(property_uri, DCTERMS.title, class_title, "de")
-                safe_add_multilingual_property(property_uri, SH.name, class_title, "de")
-
-            # Filter out duplicate content across languages
-            unique_titles = get_unique_lang_values(titles, sanitize_literal)
-            unique_descriptions = get_unique_lang_values(descriptions, sanitize_literal)
-
-            for lang, title in unique_titles.items():
-                if title and lang in ['de', 'fr', 'it', 'en']:
-                    # Use safe method to prevent duplicates
-                    sanitized_title = sanitize_literal(title)
-                    safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
-                    safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
-                    safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
-
-            for lang, desc in unique_descriptions.items():
-                if desc and lang in ['de', 'fr', 'it', 'en']:
-                    # Use safe_add_multilingual_property instead of direct addition
-                    sanitized_desc = sanitize_literal(desc)
-                    safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
-                    safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
-                    safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
-
-            # Find concepts and classes connected to this class
-            connected_class_concepts = []
-            connected_class_classes = []
-            for conn_id in class_node.connections:
-                if conn_id in self.nodes:
-                    connected_node = self.nodes[conn_id]
-                    if connected_node.type == 'concept':
-                        connected_class_concepts.append(connected_node)
-                    elif connected_node.type == 'class':
-                        connected_class_classes.append(connected_node)
-
-            # Add property shapes for concepts connected to this class
-            for concept in connected_class_concepts:
-                concept_id = norm_id(concept.title)
-                concept_property_uri = URIRef(f"{i14y_ns}{concept_id}")
-
-                # Create PropertyShape for the concept
-                g.add((concept_property_uri, RDF.type, SH.PropertyShape))
-                g.add((concept_property_uri, RDF.type, OWL.DatatypeProperty))
-                g.add((concept_property_uri, RDF.type, QB.AttributeProperty))
-                g.add((concept_property_uri, SH.path, concept_property_uri))
-                g.add((concept_property_uri, SH.datatype, URIRef(concept.datatype)))
-
-                # Add I14Y concept reference if available
-                safe_add_conforms_to(concept_property_uri, concept)
-
-                # Add advanced SHACL constraints
-                if concept.min_count is not None:
-                    g.add((concept_property_uri, SH.minCount, Literal(concept.min_count, datatype=XSD.integer)))
-                if concept.max_count is not None:
-                    g.add((concept_property_uri, SH.maxCount, Literal(concept.max_count, datatype=XSD.integer)))
-                if concept.min_length is not None:
-                    g.add((concept_property_uri, SH.minLength, Literal(concept.min_length, datatype=XSD.integer)))
-                if concept.max_length is not None:
-                    g.add((concept_property_uri, SH.maxLength, Literal(concept.max_length, datatype=XSD.integer)))
-                if concept.pattern:
-                    g.add((concept_property_uri, SH.pattern, Literal(concept.pattern)))
-                if concept.range:
-                    g.add((concept_property_uri, RDFS.range, URIRef(concept.range)))
-
-                # Add enumeration values (sh:in)
-                if concept.in_values:
-                    # Add QB:CodedProperty for enumerated values
-                    g.add((concept_property_uri, RDF.type, QB.CodedProperty))
-                    
-                    # Create RDF list for enumeration values
-                    list_head = URIRef(f"_:autos{rdf_list_counter}")
-                    rdf_list_counter += 1
-                    g.add((concept_property_uri, SH['in'], list_head))
-
-                    # Create RDF list items
-                    current = list_head
-                    for i, value in enumerate(concept.in_values[:-1]):
-                        next_item = URIRef(f"_:autos{rdf_list_counter}")
-                        rdf_list_counter += 1
-                        g.add((current, RDF.first, Literal(value)))
-                        g.add((current, RDF.rest, next_item))
-                        current = next_item
-
-                    # Last item
-                    if concept.in_values:
-                        g.add((current, RDF.first, Literal(concept.in_values[-1])))
-                        g.add((current, RDF.rest, RDF.nil))
-
-                # Add class reference (sh:node)
-                if concept.node_reference:
-                    g.add((concept_property_uri, SH.node, URIRef(concept.node_reference)))
-
-                # Add multilingual titles and descriptions
-                titles = concept.get_multilingual_title()
-                descriptions = concept.get_multilingual_description()
-
-                for lang, title in titles.items():
-                    if title and lang in ['de', 'fr', 'it', 'en']:
-                        # Use safe method to prevent duplicates
-                        sanitized_title = sanitize_literal(title)
-                        safe_add_multilingual_property(concept_property_uri, DCTERMS.title, sanitized_title, lang)
-                        safe_add_multilingual_property(concept_property_uri, RDFS.label, sanitized_title, lang)
-                        safe_add_multilingual_property(concept_property_uri, SH.name, sanitized_title, lang)
-
-                for lang, desc in descriptions.items():
-                    if desc and lang in ['de', 'fr', 'it', 'en']:
-                        # Use safe method to prevent duplicates
-                        sanitized_desc = sanitize_literal(desc)
-                        safe_add_multilingual_property(concept_property_uri, DCTERMS.description, sanitized_desc, lang)
-                        safe_add_multilingual_property(concept_property_uri, RDFS.comment, sanitized_desc, lang)
-                        safe_add_multilingual_property(concept_property_uri, SH.description, sanitized_desc, lang)
-
-                # Add to class properties
-                g.add((class_uri, SH.property, concept_property_uri))
-
-            # Add property shapes for classes connected to this class (class-to-class relationships)
-            for connected_class in connected_class_classes:
-                connected_class_id = norm_id(connected_class.title)
-                connected_class_uri = URIRef(f"{i14y_ns}{connected_class_id}")
-                class_ref_property_uri = URIRef(f"{i14y_ns}{class_id}_has_{connected_class_id}")
-
-                # Create PropertyShape for the class reference
-                g.add((class_ref_property_uri, RDF.type, SH.PropertyShape))
-                g.add((class_ref_property_uri, RDF.type, OWL.ObjectProperty))
-                g.add((class_ref_property_uri, SH.path, class_ref_property_uri))
-
-                # Use sh:node instead of sh:class for I14Y (as recommended in documentation section 6)
-                g.add((class_ref_property_uri, SH.node, connected_class_uri))
-
-                # Get cardinality from edge if available
-                edge_id = f"{class_node.id}-{connected_class.id}"
-                if edges and edge_id in edges:
-                    cardinality = edges[edge_id].get('cardinality', '1..1')
-                else:
-                    # Try reverse edge
-                    reverse_edge_id = f"{connected_class.id}-{class_node.id}"
-                    if edges and reverse_edge_id in edges:
-                        cardinality = edges[reverse_edge_id].get('cardinality', '1..1')
-                    else:
-                        cardinality = '1..1'  # Default
-
-                # Parse cardinality and add SHACL constraints
-                min_count, max_count = parse_cardinality(cardinality)
-                if min_count is not None:
-                    g.add((class_ref_property_uri, SH.minCount, Literal(min_count, datatype=XSD.integer)))
-                if max_count is not None:
-                    g.add((class_ref_property_uri, SH.maxCount, Literal(max_count, datatype=XSD.integer)))
-
-                # Add multilingual labels for the relationship
-                relationship_title = f"has {connected_class.title}"
-                relationship_desc = f"Reference to {connected_class.title} instances"
-
-                safe_add_multilingual_property(class_ref_property_uri, DCTERMS.title, relationship_title, "de")
-                safe_add_multilingual_property(class_ref_property_uri, RDFS.label, relationship_title, "de")
-                safe_add_multilingual_property(class_ref_property_uri, SH.name, relationship_title, "de")
-                safe_add_multilingual_property(class_ref_property_uri, DCTERMS.description, relationship_desc, "de")
-                safe_add_multilingual_property(class_ref_property_uri, RDFS.comment, relationship_desc, "de")
-                safe_add_multilingual_property(class_ref_property_uri, SH.description, relationship_desc, "de")
-
-                # Add to class properties
-                g.add((class_uri, SH.property, class_ref_property_uri))
-
-            # Add to dataset properties
-            g.add((dataset_shape, SH.property, property_uri))
-
-        # Add sh:xone constraints for exclusive property groups
-        if hasattr(dataset_node, 'xone_groups') and dataset_node.xone_groups:
-            for group_idx, group in enumerate(dataset_node.xone_groups):
-                xone_list = BNode()
-                g.add((dataset_shape, SH.xone, xone_list))
-
-                for prop_idx, prop_uri in enumerate(group):
-                    prop_shape = BNode()
-                    g.add((xone_list, RDF.first, prop_shape))
-                    g.add((prop_shape, RDF.type, SH.PropertyShape))
-                    g.add((prop_shape, SH.path, URIRef(prop_uri)))
-
-                    if prop_idx < len(group) - 1:
-                        next_list = BNode()
-                        g.add((xone_list, RDF.rest, next_list))
-                        xone_list = next_list
-                    else:
-                        g.add((xone_list, RDF.rest, RDF.nil))
-
-        # Serialize to TTL format with custom prefixes
-        ttl_content = g.serialize(format='turtle', encoding='utf-8').decode('utf-8')
-
-        # Clean up duplicate prefixes and organize the output
-        lines = ttl_content.split('\n')
-        seen_prefixes = set()
-        cleaned_lines = []
-        data_lines = []
-
-        for line in lines:
-            if line.startswith('@prefix'):
-                prefix_name = line.split(':')[0].replace('@prefix ', '')
-                if prefix_name not in seen_prefixes:
-                    seen_prefixes.add(prefix_name)
-                    cleaned_lines.append(line)
-            elif line.strip():
-                data_lines.append(line)
-
-        # Add our custom prefixes first
-        custom_prefixes = f"""@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>.
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#>.
-@prefix QB: <http://purl.org/linked-data/cube#>.
-@prefix dcterms: <http://purl.org/dc/terms/>.
-@prefix i14y: <https://www.i14y.admin.ch/resources/datasets/{dataset_id}/structure/>.
-@prefix owl: <http://www.w3.org/2002/07/owl#>.
-@prefix sh: <http://www.w3.org/ns/shacl#>.
-
-"""
-
-        return custom_prefixes + '\n'.join(data_lines) + '\n'
     
     def save_project(self):
         """Save the current project"""
@@ -4578,27 +4076,6 @@ def disconnect_nodes():
         return jsonify({"success": True})
     return jsonify({"error": "Failed to disconnect nodes"}), 400
 
-@app.route('/api/generate-ttl', methods=['GET'])
-def generate_ttl():
-    """Generate TTL for the graph"""
-    editor = get_user_editor()
-    ttl = editor.generate_ttl()
-    return jsonify({"ttl": ttl})
-
-@app.route('/api/download-ttl', methods=['GET'])
-def download_ttl():
-    """Download the graph as a TTL file"""
-    editor = get_user_editor()
-    ttl = editor.generate_ttl()
-    
-    # Create a temporary file
-    fd, path = tempfile.mkstemp(suffix='.ttl')
-    with os.fdopen(fd, 'w') as tmp:
-        tmp.write(ttl)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return send_file(path, as_attachment=True, download_name=f"shacl_model_{timestamp}.ttl")
-
 @app.route('/api/save', methods=['POST'])
 def save_graph():
     """Save the graph to a file"""
@@ -5177,61 +4654,6 @@ def disconnect_i14y_dataset():
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Failed to disconnect I14Y dataset"}), 500
-        # Create a concept node from I14Y data
-        concept_node = SHACLNode('concept')
-        concept_node.set_i14y_concept(concept_data)
-        
-        print(f"Created node with ID: {concept_node.id}, title: {concept_node.title}")
-        
-        # Add to nodes
-        editor.nodes[concept_node.id] = concept_node
-        print(f"Added node to editor, total nodes: {len(editor.nodes)}")
-        
-        # Connect to parent if specified
-        if parent_id and parent_id in editor.nodes:
-            # Add to connections sets
-            editor.nodes[parent_id].connections.add(concept_node.id)
-            concept_node.connections.add(parent_id)
-            
-            # Create an edge in the edge dictionary
-            edge_id = f"{parent_id}-{concept_node.id}"
-            editor.edges[edge_id] = {
-                'id': edge_id,
-                'from': parent_id,
-                'to': concept_node.id,
-                'cardinality': '1..1'
-            }
-            print(f"Created edge from {parent_id} to {concept_node.id}")
-        else:
-            # If no parent specified, connect to dataset node
-            dataset_node = None
-            for n_id, n in editor.nodes.items():
-                if n.type == 'dataset':
-                    dataset_node = n
-                    break
-            
-            if dataset_node:
-                # Add to connections sets
-                dataset_node.connections.add(concept_node.id)
-                concept_node.connections.add(dataset_node.id)
-                
-                # Create an edge in the edge dictionary
-                edge_id = f"{dataset_node.id}-{concept_node.id}"
-                editor.edges[edge_id] = {
-                    'id': edge_id,
-                    'from': dataset_node.id,
-                    'to': concept_node.id,
-                    'cardinality': '1..1'
-                }
-                print(f"Created edge from {dataset_node.id} to {concept_node.id}")
-        
-        print(f"Successfully added concept node with ID: {concept_node.id}")
-        return jsonify({"success": True, "node_id": concept_node.id})
-    except Exception as e:
-        print(f"ERROR adding I14Y concept: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": "Failed to add I14Y concept"}), 500
 
 @app.route('/api/export/ttl', methods=['GET'])
 def export_ttl():
