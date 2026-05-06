@@ -7,6 +7,7 @@ import os
 import tempfile
 import requests
 import re
+import ast
 import uuid
 import threading
 import time
@@ -727,6 +728,40 @@ class SHACLNode:
 
         return None
 
+    @staticmethod
+    def _parse_multilingual_value(value: Any) -> Dict[str, str]:
+        """Normalize multilingual input from dict or serialized dict string."""
+        source = None
+
+        if isinstance(value, dict):
+            source = value
+        elif isinstance(value, str):
+            raw = value.strip()
+            if raw.startswith('{') and raw.endswith('}'):
+                parsed = None
+                try:
+                    parsed = json.loads(raw)
+                except (ValueError, TypeError):
+                    try:
+                        parsed = ast.literal_eval(raw)
+                    except (ValueError, SyntaxError):
+                        parsed = None
+                if isinstance(parsed, dict):
+                    source = parsed
+
+        if not source:
+            return {}
+
+        normalized = {}
+        for lang in ['de', 'en', 'fr', 'it', 'rm']:
+            text = source.get(lang)
+            if text is None:
+                continue
+            text = str(text).strip()
+            if text:
+                normalized[lang] = text
+        return normalized
+
     @classmethod
     def build_i14y_concept_uri(cls, concept_data: Dict) -> Optional[str]:
         """Build concept permalink using register.ld.admin.ch pattern."""
@@ -948,18 +983,19 @@ class SHACLNode:
     
     def get_multilingual_title(self) -> Dict[str, str]:
         """Get multilingual titles from I14Y data or fallback to single title"""
-        if isinstance(self.title, dict):
-            base_title = (self.title.get('de') or
-                         self.title.get('en') or
-                         self.title.get('fr') or
-                         self.title.get('it') or
-                         self.title.get('rm') or
+        parsed_title = SHACLNode._parse_multilingual_value(self.title)
+        if parsed_title:
+            base_title = (parsed_title.get('de') or
+                         parsed_title.get('en') or
+                         parsed_title.get('fr') or
+                         parsed_title.get('it') or
+                         parsed_title.get('rm') or
                          '')
             return {
-                'de': str(self.title.get('de') or base_title),
-                'en': str(self.title.get('en') or base_title),
-                'fr': str(self.title.get('fr') or base_title),
-                'it': str(self.title.get('it') or base_title)
+                'de': str(parsed_title.get('de') or base_title),
+                'en': str(parsed_title.get('en') or base_title),
+                'fr': str(parsed_title.get('fr') or base_title),
+                'it': str(parsed_title.get('it') or base_title)
             }
 
         if self.i14y_data and 'title' in self.i14y_data:
@@ -990,28 +1026,29 @@ class SHACLNode:
     
     def get_multilingual_description(self) -> Dict[str, str]:
         """Get multilingual descriptions, ensuring all supported languages are present"""
-        if isinstance(self.description, dict):
+        parsed_description = SHACLNode._parse_multilingual_value(self.description)
+        if parsed_description:
             # Return the stored multilingual descriptions, filling in missing languages
-            base_desc = (self.description.get('de') or 
-                        self.description.get('en') or 
-                        self.description.get('fr') or 
-                        self.description.get('it') or 
-                        self.description.get('rm') or 
+            base_desc = (parsed_description.get('de') or 
+                        parsed_description.get('en') or 
+                        parsed_description.get('fr') or 
+                        parsed_description.get('it') or 
+                        parsed_description.get('rm') or 
                         '')
             return {
-                'de': self.description.get('de', base_desc),
-                'en': self.description.get('en', base_desc),
-                'fr': self.description.get('fr', base_desc),
-                'it': self.description.get('it', base_desc)
+                'de': str(parsed_description.get('de', base_desc)),
+                'en': str(parsed_description.get('en', base_desc)),
+                'fr': str(parsed_description.get('fr', base_desc)),
+                'it': str(parsed_description.get('it', base_desc))
             }
         else:
             # Handle legacy string descriptions
             desc = self.description or ''
             return {
-                'de': desc,
-                'en': desc,
-                'fr': desc,
-                'it': desc
+                'de': str(desc),
+                'en': str(desc),
+                'fr': str(desc),
+                'it': str(desc)
             }
     
     def to_dict(self) -> Dict:
@@ -1308,34 +1345,21 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     g.add((dataset_shape, RDF.type, QB.DataStructureDefinition))
 
     # Add dataset metadata with multilingual support
-    # Handle both string and multilingual dict formats
-    if isinstance(dataset_node.title, dict):
-        # Multilingual title - add all available languages
-        for lang in ['de', 'fr', 'it', 'en']:
-            if lang in dataset_node.title and dataset_node.title[lang]:
-                title_text = sanitize_literal(dataset_node.title[lang])
-                safe_add_multilingual_property(dataset_shape, DCTERMS.title, title_text, lang)
-                safe_add_multilingual_property(dataset_shape, RDFS.label, title_text, lang)
-    else:
-        # Single language title
-        ds_title = sanitize_literal(dataset_node.title)
-        if ds_title:
-            safe_add_multilingual_property(dataset_shape, DCTERMS.title, ds_title, 'de')
-            safe_add_multilingual_property(dataset_shape, RDFS.label, ds_title, 'de')
-    
-    if isinstance(dataset_node.description, dict):
-        # Multilingual description - add all available languages
-        for lang in ['de', 'fr', 'it', 'en']:
-            if lang in dataset_node.description and dataset_node.description[lang]:
-                desc_text = sanitize_literal(dataset_node.description[lang])
-                safe_add_multilingual_property(dataset_shape, DCTERMS.description, desc_text, lang)
-                safe_add_multilingual_property(dataset_shape, RDFS.comment, desc_text, lang)
-    else:
-        # Single language description
-        ds_desc = sanitize_literal(dataset_node.description)
-        if ds_desc:
-            safe_add_multilingual_property(dataset_shape, DCTERMS.description, ds_desc, 'de')
-            safe_add_multilingual_property(dataset_shape, RDFS.comment, ds_desc, 'de')
+    dataset_titles = dataset_node.get_multilingual_title()
+    dataset_descriptions = dataset_node.get_multilingual_description()
+
+    unique_dataset_titles = get_unique_lang_values(dataset_titles, sanitize_literal)
+    unique_dataset_descriptions = get_unique_lang_values(dataset_descriptions, sanitize_literal)
+
+    for lang, title in unique_dataset_titles.items():
+        sanitized_title = sanitize_literal(title)
+        safe_add_multilingual_property(dataset_shape, DCTERMS.title, sanitized_title, lang)
+        safe_add_multilingual_property(dataset_shape, RDFS.label, sanitized_title, lang)
+
+    for lang, desc in unique_dataset_descriptions.items():
+        sanitized_desc = sanitize_literal(desc)
+        safe_add_multilingual_property(dataset_shape, DCTERMS.description, sanitized_desc, lang)
+        safe_add_multilingual_property(dataset_shape, RDFS.comment, sanitized_desc, lang)
 
     # Add version and schema information (following I14Y pattern)
     PAV = Namespace("http://purl.org/pav/")
@@ -1381,29 +1405,20 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         g.add((class_uri, SH.targetClass, class_uri))
 
         # Add class metadata with multilingual support
-        if isinstance(class_node.title, dict):
-            # Multilingual title
-            for lang in ['de', 'fr', 'it', 'en']:
-                if lang in class_node.title and class_node.title[lang]:
-                    title_text = sanitize_literal(class_node.title[lang])
-                    safe_add_multilingual_property(class_uri, SH.name, title_text, lang)
-        else:
-            class_title = sanitize_literal(class_node.title)
-            if class_title:
-                safe_add_multilingual_property(class_uri, SH.name, class_title, "en")
+        class_titles = class_node.get_multilingual_title()
+        class_descriptions = class_node.get_multilingual_description()
 
-        if isinstance(class_node.description, dict):
-            # Multilingual description
-            for lang in ['de', 'fr', 'it', 'en']:
-                if lang in class_node.description and class_node.description[lang]:
-                    desc_text = sanitize_literal(class_node.description[lang])
-                    safe_add_multilingual_property(class_uri, DCTERMS.description, desc_text, lang)
-                    safe_add_multilingual_property(class_uri, RDFS.comment, desc_text, lang)
-        else:
-            class_desc = sanitize_literal(class_node.description)
-            if class_desc:
-                safe_add_multilingual_property(class_uri, DCTERMS.description, class_desc, "de")
-                safe_add_multilingual_property(class_uri, RDFS.comment, class_desc, "de")
+        unique_class_titles = get_unique_lang_values(class_titles, sanitize_literal)
+        unique_class_descriptions = get_unique_lang_values(class_descriptions, sanitize_literal)
+
+        for lang, title in unique_class_titles.items():
+            sanitized_title = sanitize_literal(title)
+            safe_add_multilingual_property(class_uri, SH.name, sanitized_title, lang)
+
+        for lang, desc in unique_class_descriptions.items():
+            sanitized_desc = sanitize_literal(desc)
+            safe_add_multilingual_property(class_uri, DCTERMS.description, sanitized_desc, lang)
+            safe_add_multilingual_property(class_uri, RDFS.comment, sanitized_desc, lang)
 
         # Collect concepts and data elements connected to this class
         class_concepts = []
@@ -1602,19 +1617,24 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
             if data_element.order is not None:
                 g.add((property_uri, SH.order, Literal(data_element.order)))
 
-            # Add multilingual titles and descriptions using local_name and description
-            element_title = data_element.title  # Use the custom title
-            element_desc = data_element.description
-            
-            if element_title:
-                safe_add_multilingual_property(property_uri, DCTERMS.title, element_title, "de")
-                safe_add_multilingual_property(property_uri, RDFS.label, element_title, "de")
-                safe_add_multilingual_property(property_uri, SH.name, element_title, "de")
+            # Add multilingual titles and descriptions
+            element_titles = data_element.get_multilingual_title()
+            element_descriptions = data_element.get_multilingual_description()
 
-            if element_desc:
-                safe_add_multilingual_property(property_uri, DCTERMS.description, element_desc, "de")
-                safe_add_multilingual_property(property_uri, RDFS.comment, element_desc, "de")
-                safe_add_multilingual_property(property_uri, SH.description, element_desc, "de")
+            unique_element_titles = get_unique_lang_values(element_titles, sanitize_literal)
+            unique_element_descriptions = get_unique_lang_values(element_descriptions, sanitize_literal)
+
+            for lang, title in unique_element_titles.items():
+                sanitized_title = sanitize_literal(title)
+                safe_add_multilingual_property(property_uri, DCTERMS.title, sanitized_title, lang)
+                safe_add_multilingual_property(property_uri, RDFS.label, sanitized_title, lang)
+                safe_add_multilingual_property(property_uri, SH.name, sanitized_title, lang)
+
+            for lang, desc in unique_element_descriptions.items():
+                sanitized_desc = sanitize_literal(desc)
+                safe_add_multilingual_property(property_uri, DCTERMS.description, sanitized_desc, lang)
+                safe_add_multilingual_property(property_uri, RDFS.comment, sanitized_desc, lang)
+                safe_add_multilingual_property(property_uri, SH.description, sanitized_desc, lang)
 
             class_property_uris.append(property_uri)
 
