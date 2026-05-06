@@ -1191,9 +1191,11 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         normalized = unicodedata.normalize("NFKD", raw)
         ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
-        slug = ascii_text.replace(" ", "_").replace("-", "_")
-        slug = re.sub(r"[^A-Za-z0-9_]", "", slug)
-        slug = re.sub(r"_+", "_", slug).strip("_")
+        slug = re.sub(r"\s+", "_", ascii_text)
+        slug = re.sub(r"[^A-Za-z0-9_-]", "", slug)
+        slug = re.sub(r"_+", "_", slug)
+        slug = re.sub(r"-+", "-", slug)
+        slug = slug.strip("_-")
         return slug.lower() or fallback
 
     def preserve_id(value: str, fallback: str = "property") -> str:
@@ -1204,9 +1206,11 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 
         normalized = unicodedata.normalize("NFKD", raw)
         ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
-        slug = ascii_text.replace(" ", "_").replace("-", "_")
-        slug = re.sub(r"[^A-Za-z0-9_]", "", slug)
-        slug = re.sub(r"_+", "_", slug).strip("_")
+        slug = re.sub(r"\s+", "_", ascii_text)
+        slug = re.sub(r"[^A-Za-z0-9_-]", "", slug)
+        slug = re.sub(r"_+", "_", slug)
+        slug = re.sub(r"-+", "-", slug)
+        slug = slug.strip("_-")
         return slug or fallback
 
     # Generate a normalized ASCII dataset ID from title
