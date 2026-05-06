@@ -57,7 +57,7 @@ class SessionManager:
                 time.sleep(self.cleanup_interval)
                 self.cleanup_expired_sessions()
             except Exception as e:
-                print(f"Error in session cleanup: {e}")
+                pass
     
     def cleanup_expired_sessions(self):
         """Remove sessions that haven't been active for too long"""
@@ -232,12 +232,10 @@ class I14YAPIClient:
                 print(f"API returned unexpected status code: {response.status_code}")
                 try:
                     error_data = response.json()
-                    print(f"Error response: {error_data}")
                 except:
                     print(f"Could not parse error response: {response.text[:200]}")
                 return None
         except Exception as e:
-            print(f"Error getting concept details: {e}")
             return None
     
     def get_codelist_entries(self, concept_id: str) -> Optional[List[Dict]]:
@@ -290,10 +288,9 @@ class I14YAPIClient:
                 if response.status_code == 404:
                     print("No codelist available for this concept")
                 else:
-                    print(f"Error response: {response.text[:200]}")
+                    return None
                 return None
         except Exception as e:
-            print(f"Error getting codelist entries: {e}")
             return None
     
     def search_datasets(self, query='', page=1, page_size=20):
@@ -389,12 +386,10 @@ class I14YAPIClient:
                 print(f"API returned unexpected status code: {response.status_code}")
                 try:
                     error_data = response.json()
-                    print(f"Error response: {error_data}")
                 except:
                     print(f"Could not parse error response: {response.text[:200]}")
                 return None
         except Exception as e:
-            print(f"Error getting dataset details: {e}")
             return None
 
     def get_public_dataset_details(self, dataset_id: str) -> Optional[Dict]:
@@ -416,7 +411,6 @@ class I14YAPIClient:
                 print(f"Public API returned {response.status_code} for {dataset_id}")
                 return None
         except Exception as e:
-            print(f"Error fetching public dataset details: {e}")
             return None
 
     def extract_constraints_from_concept(self, concept_data: Dict) -> Dict:
@@ -588,7 +582,6 @@ class I14YAPIClient:
                 print(f"API returned status code: {response.status_code}")
                 return []
         except Exception as e:
-            print(f"Error getting concept schemes: {e}")
             return []
 
 class SHACLNode:
@@ -2572,7 +2565,6 @@ def reset_structure_api():
         else:
             return jsonify({"error": "Failed to reset structure"}), 500
     except Exception as e:
-        print(f"Error resetting structure: {str(e)}")
         return jsonify({"error": "Failed to reset structure"}), 500
 
 class FlaskSHACLGraphEditor:
@@ -2703,11 +2695,9 @@ class FlaskSHACLGraphEditor:
         """Connect two nodes"""
         # Verify both nodes exist
         if source_id not in self.nodes:
-            print(f"ERROR: Source node {source_id} not found")
             return False
             
         if target_id not in self.nodes:
-            print(f"ERROR: Target node {target_id} not found") 
             return False
             
         # Get the actual node objects
@@ -2738,11 +2728,9 @@ class FlaskSHACLGraphEditor:
         """Disconnect two nodes"""
         # Verify both nodes exist
         if source_id not in self.nodes:
-            print(f"ERROR: Source node {source_id} not found")
             return False
             
         if target_id not in self.nodes:
-            print(f"ERROR: Target node {target_id} not found")
             return False
         
         # Get the actual node objects
@@ -2808,7 +2796,6 @@ class FlaskSHACLGraphEditor:
             
             return True
         except Exception as e:
-            print(f"Error in reset_structure: {str(e)}")
             return False
     
     def create_edge(self, node1_id, node2_id, cardinality="1..1", order=None):
@@ -2905,7 +2892,6 @@ class FlaskSHACLGraphEditor:
             
             return True
         except Exception as e:
-            print(f"Error loading graph: {e}")
             return False
 
 # Create a session manager instance (moved from above to resolve import order)
@@ -3015,7 +3001,6 @@ def get_graph():
                 else:
                     print(f"Warning: Could not extract from/to IDs for edge {edge_id}")
             except Exception as e:
-                print(f"Error processing edge {edge_id}: {str(e)}")
                 continue
     
     return jsonify({
@@ -3080,7 +3065,6 @@ def get_graph_layout():
                     else:
                         print(f"Warning: Could not extract from/to IDs for edge {edge_id} in layout calculation")
                 except Exception as e:
-                    print(f"Error processing edge {edge_id} in layout calculation: {str(e)}")
                     continue
         
         # Apply NetworkX layout algorithm
@@ -3145,8 +3129,6 @@ def get_graph_layout():
                 'positions': {}
             })
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': 'Failed to get graph data'
@@ -3399,7 +3381,6 @@ def create_data_element():
         
         return jsonify({"success": True, "node_id": data_element.id})
     except Exception as e:
-        print(f"Error creating data element: {str(e)}")
         return jsonify({"error": "Failed to create data element"}), 500
 
 @app.route('/api/data-elements/<data_element_id>', methods=['PUT'])
@@ -3444,7 +3425,6 @@ def link_node_to_i14y_concept():
         try:
             node_id = str(node_id)
         except Exception as e:
-            print(f"Error converting node_id to string: {e}")
             return jsonify({"error": f"Invalid node ID format: {type(node_id)}"}), 400
     
     # Check if the node exists
@@ -3528,7 +3508,6 @@ def link_node_to_i14y_concept():
             
         return jsonify({"success": True})
     except Exception as e:
-        print(f"Error linking to I14Y concept: {e}")
         return jsonify({"error": "Failed to link to I14Y concept"}), 500
 
 @app.route('/api/data-elements/<data_element_id>/link-concept', methods=['POST'])
@@ -3585,7 +3564,6 @@ def link_data_element_to_concept(data_element_id):
         
         return jsonify({"success": True})
     except Exception as e:
-        print(f"Error unlinking concept from data element: {str(e)}")
         return jsonify({"error": "Failed to unlink concept from data element"}), 500
 
 @app.route('/api/data-elements/<data_element_id>/unlink-concept', methods=['POST'])
@@ -3833,9 +3811,6 @@ def link_node_to_i14y(node_id):
         
         return jsonify({"success": True})
     except Exception as e:
-        import traceback
-        print(f"Error linking node to I14Y: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": "Failed to link node to I14Y"}), 500
 
 @app.route('/api/nodes/<node_id>/disconnect-i14y', methods=['POST'])
@@ -3891,9 +3866,6 @@ def disconnect_node_from_i14y(node_id):
             }
         })
     except Exception as e:
-        import traceback
-        print(f"Error disconnecting node from I14Y: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": "Failed to disconnect node from I14Y"}), 500
 
 @app.route('/api/nodes/<node_id>', methods=['PUT'])
@@ -4030,7 +4002,6 @@ def delete_edge(edge_id):
         print(f"Successfully deleted edge {edge_id}")
         return jsonify({"success": True})
     except Exception as e:
-        print(f"Error deleting edge: {str(e)}")
         return jsonify({"error": "Failed to delete edge"}), 500
 
 @app.route('/api/edges/<edge_id>/cardinality', methods=['POST'])
@@ -4155,7 +4126,6 @@ def save_project():
             mimetype='application/json'
         )
     except Exception as e:
-        print(f"Error saving project: {str(e)}")
         return jsonify({"error": "Failed to save project"}), 500
 
 @app.route('/api/project/load', methods=['POST'])
@@ -4182,7 +4152,6 @@ def load_project():
         print(f"Raw content length: {len(raw_content)} bytes")
         
         if len(raw_content) == 0:
-            print("ERROR: File content is empty!")
             return jsonify({"error": "Uploaded file is empty"}), 400
         
         content = raw_content.decode('utf-8')
@@ -4300,9 +4269,6 @@ def load_project():
         print(f"Project loaded: {total_nodes} nodes and {total_edges} total edges")
         return jsonify({"success": True})
     except Exception as e:
-        print(f"Error loading project: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "Failed to load project"}), 500
 
 @app.route('/api/files', methods=['GET'])
@@ -4347,7 +4313,6 @@ def new_project():
         else:
             return jsonify({"error": "Failed to create new structure"}), 500
     except Exception as e:
-        print(f"Error creating new project: {str(e)}")
         return jsonify({"error": "Failed to create new project"}), 500
 
 @app.route('/new-structure', methods=['GET'])
@@ -4360,7 +4325,6 @@ def new_structure_page():
         # Redirect to the home page
         return redirect('/')
     except Exception as e:
-        print(f"Error creating new structure: {str(e)}")
         return "Failed to create new structure", 500
 
 @app.route('/api/i14y/search', methods=['GET'])
@@ -4399,9 +4363,6 @@ def search_i14y():
             print(f"First result: {results[0].get('title') if results[0] else None}")
         return jsonify({"concepts": results})
     except Exception as e:
-        print(f"Error searching I14Y concepts: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "Failed to search I14Y concepts", "concepts": []}), 500
 
 @app.route('/api/i14y/dataset/search', methods=['GET'])
@@ -4469,9 +4430,6 @@ def search_i14y_datasets():
             print(f"First result: {results[0].get('title') if results[0] else None}")
         return jsonify({"datasets": results})
     except Exception as e:
-        print(f"Error searching I14Y datasets: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "Failed to search I14Y datasets", "datasets": []}), 500
 
 @app.route('/api/i14y/dataset/link', methods=['POST'])
@@ -4481,7 +4439,6 @@ def link_i14y_dataset():
     print("=== API: Received request to link I14Y dataset ===")
     
     if not request.is_json:
-        print("ERROR: Request is not JSON")
         return jsonify({"error": "Request must be JSON"}), 400
     
     # Get the JSON data
@@ -4493,7 +4450,6 @@ def link_i14y_dataset():
     
     # Validate dataset data
     if not dataset_id or not dataset_data:
-        print("ERROR: Missing dataset_id or dataset_data in request")
         return jsonify({"error": "Dataset ID and data are required"}), 400
     
     print(f"Dataset ID: {dataset_id}")
@@ -4503,7 +4459,6 @@ def link_i14y_dataset():
         # Find the specific dataset node
         dataset_node = editor.nodes.get(dataset_id)
         if not dataset_node or dataset_node.type != 'dataset':
-            print("ERROR: Dataset node not found or not a dataset type")
             return jsonify({"error": "Dataset node not found"}), 404
         
         # Update the dataset node with I14Y information
@@ -4605,9 +4560,6 @@ def link_i14y_dataset():
             }
         })
     except Exception as e:
-        print(f"Error linking I14Y dataset: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "Failed to link I14Y dataset"}), 500
 
 @app.route('/api/i14y/dataset/disconnect', methods=['POST'])
@@ -4625,7 +4577,6 @@ def disconnect_i14y_dataset():
                 break
         
         if not dataset_node:
-            print("ERROR: No dataset node found")
             return jsonify({"error": "No dataset node found"}), 404
         
         # Check if dataset is actually connected to I14Y
@@ -4654,9 +4605,6 @@ def disconnect_i14y_dataset():
             }
         })
     except Exception as e:
-        print(f"Error disconnecting I14Y dataset: {e}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "Failed to disconnect I14Y dataset"}), 500
 
 @app.route('/api/export/ttl', methods=['GET'])
@@ -4722,7 +4670,6 @@ def export_ttl():
             mimetype='text/turtle'
         )
     except Exception as e:
-        print(f"Error exporting TTL: {str(e)}")
         return jsonify({"error": "Failed to export TTL"}), 500
 
 @app.route('/api/i14y/schemes', methods=['GET'])
@@ -4738,7 +4685,6 @@ def get_schemes():
             # Return empty list if method doesn't exist
             return jsonify({"schemes": [], "message": "Concept scheme retrieval not implemented"})
     except Exception as e:
-        print(f"Error getting schemes: {str(e)}")
         return jsonify({"error": "Failed to get concept schemes", "schemes": []}), 500
 
 @app.route('/api/i14y/concept/<concept_id>', methods=['GET'])
@@ -4761,9 +4707,6 @@ def get_i14y_concept(concept_id):
                 "message": "The concept could not be found via the I14Y API. This may be due to an invalid ID or API changes."
             }), 404
     except Exception as e:
-        print(f"Error getting I14Y concept: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({
             "success": False, 
             "error": "Failed to fetch concept from I14Y API",
@@ -4777,7 +4720,6 @@ def add_i14y_concept():
     print("=== API: Received request to add I14Y concept ===")
     
     if not request.is_json:
-        print("ERROR: Request is not JSON")
         return jsonify({"error": "Request must be JSON"}), 400
     
     # Get the JSON data
@@ -4789,7 +4731,6 @@ def add_i14y_concept():
     
     # Validate concept data
     if not concept_data:
-        print("ERROR: Missing concept_data in request")
         return jsonify({"error": "Concept data is required"}), 400
     
     print(f"Concept data: {concept_data.keys() if isinstance(concept_data, dict) else 'not a dict'}")
@@ -4847,9 +4788,6 @@ def add_i14y_concept():
         print(f"Successfully added concept node with ID: {concept_node.id}")
         return jsonify({"success": True, "node_id": concept_node.id})
     except Exception as e:
-        print(f"ERROR adding I14Y concept: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return jsonify({"error": "Failed to add I14Y concept"}), 500
 
 @app.route('/api/dataset', methods=['GET', 'POST'])
@@ -5160,9 +5098,6 @@ def parse_ttl_to_nodes(g: Graph, editor) -> bool:
         return True
         
     except Exception as e:
-        print(f"Error parsing TTL: {e}")
-        import traceback
-        traceback.print_exc()
         return False
 
 @app.route('/api/import/ttl', methods=['POST'])
@@ -5200,7 +5135,6 @@ def import_ttl():
             return jsonify({"error": "Failed to parse TTL structure"}), 400
             
     except Exception as e:
-        print(f"Error importing TTL: {e}")
         return jsonify({"error": "Failed to import TTL"}), 500
 
 @app.route('/api/import/example/ttl', methods=['GET'])
@@ -5226,7 +5160,6 @@ def import_example_ttl():
         
         return jsonify({"success": True})
     except Exception as e:
-        print(f"Error importing example TTL: {str(e)}")
         return jsonify({"error": "Failed to import example TTL"}), 500
 
 def _process_csv_ttl_import(editor, ttl: str, source_filename: str, dataset_name: str):
@@ -5471,17 +5404,11 @@ def import_csv():
             with open('/tmp/csv_import.log', 'a') as f:
                 f.write("TTL processed successfully\n")
         except Exception as e:
-            import traceback
-            print(f"Error processing TTL: {str(e)}")
-            print("Full traceback:")
-            traceback.print_exc()
             # Continue with basic import even if advanced processing fails
+            pass
         
         return jsonify({"success": True})
     except Exception as e:
-        import traceback
-        print(f"Error importing CSV: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": "Failed to import CSV"}), 500
 
 @app.route('/api/import/excel/sheets', methods=['POST'])
@@ -5503,7 +5430,7 @@ def import_excel_sheets():
         wb.close()
         return jsonify({"success": True, "sheets": sheets})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Failed to read Excel workbook"}), 500
 
 
 @app.route('/api/import/excel', methods=['POST'])
@@ -5549,16 +5476,11 @@ def import_excel():
         try:
             _process_csv_ttl_import(editor, ttl, file.filename, dataset_name)
         except Exception as e:
-            import traceback
-            print(f"Error processing Excel TTL: {str(e)}")
-            traceback.print_exc()
             # Continue with basic import even if advanced processing fails
+            pass
 
         return jsonify({"success": True})
     except Exception as e:
-        import traceback
-        print(f"Error importing Excel: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": "Failed to import Excel file"}), 500
 
 
@@ -5782,16 +5704,11 @@ def import_xsd():
 
             print(f"Successfully processed XSD. Created {len(processed_nodes)} class nodes and {len(editor.edges)} edges.")
         except Exception as e:
-            import traceback
-            print(f"Error processing TTL from XSD: {str(e)}")
-            print(traceback.format_exc())
             # Continue with basic import even if advanced processing fails
+            pass
         
         return jsonify({"success": True})
     except Exception as e:
-        import traceback
-        print(f"Error importing XSD: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": "An internal error occurred."}), 500
 
 @app.route('/api/nodes/<node_id>/convert-to-dataset', methods=['POST'])
