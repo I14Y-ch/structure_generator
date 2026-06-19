@@ -5354,6 +5354,199 @@ def detect_and_decode_csv(file_content: bytes, encoding: str = 'auto') -> tuple[
                 f"Failed to decode CSV file with encoding '{encoding}'. Please try a different encoding."
             )
 
+
+def decode_uploaded_text(file_content: bytes) -> tuple[str, str]:
+    """Decode an uploaded text file with UTF-8 first and robust fallbacks."""
+    for encoding in ['utf-8-sig', 'utf-8']:
+        try:
+            return file_content.decode(encoding), encoding
+        except UnicodeDecodeError:
+            continue
+
+    detected = chardet.detect(file_content)
+    detected_encoding = detected.get('encoding')
+    confidence = detected.get('confidence', 0)
+    if detected_encoding and confidence > 0.7:
+        try:
+            return file_content.decode(detected_encoding), detected_encoding
+        except (UnicodeDecodeError, LookupError):
+            pass
+
+    for encoding in ['latin-1', 'windows-1252', 'cp1252', 'iso-8859-1']:
+        try:
+            return file_content.decode(encoding), encoding
+        except (UnicodeDecodeError, LookupError):
+            continue
+
+    return file_content.decode('latin-1', errors='replace'), 'latin-1'
+
+
+def slug_identifier(value: str, fallback: str = 'field') -> str:
+    """Build an ASCII-safe identifier from free-form input text."""
+    raw = (value or '').strip()
+    if not raw:
+        return fallback
+
+    normalized = unicodedata.normalize('NFKD', raw)
+    ascii_text = normalized.encode('ascii', 'ignore').decode('ascii')
+    slug = re.sub(r"\s+", "_", ascii_text)
+    slug = re.sub(r"[^A-Za-z0-9_-]", "", slug)
+    slug = re.sub(r"_+", "_", slug)
+    slug = re.sub(r"-+", "-", slug)
+    slug = slug.strip('_-')
+    return slug or fallback
+
+
+def infer_geojson_datatype(values: List[Any]) -> str:
+    """Infer an XSD datatype from sampled GeoJSON property values."""
+    non_null_values = [v for v in values if v is not None]
+    if not non_null_values:
+        return 'xsd:string'
+
+    if all(isinstance(v, bool) for v in non_null_values):
+        return 'xsd:boolean'
+
+    if all(isinstance(v, int) and not isinstance(v, bool) for v in non_null_values):
+        return 'xsd:integer'
+
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in non_null_values):
+        return 'xsd:decimal'
+
+    if all(isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v.strip()) for v in non_null_values):
+        return 'xsd:date'
+
+    if all(isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?", v.strip()) for v in non_null_values):
+        return 'xsd:dateTime'
+
+    return 'xsd:string'
+
+
+def import_geojson_structure(editor, geojson_payload: Dict[str, Any], dataset_name: str, source_filename: str) -> None:
+    """Extract a structural model from GeoJSON and store it in the editor graph."""
+    if not isinstance(geojson_payload, dict):
+        raise ValueError('GeoJSON content must be a JSON object.')
+
+    geo_type = geojson_payload.get('type')
+    if geo_type == 'FeatureCollection':
+        features = geojson_payload.get('features', [])
+    elif geo_type == 'Feature':
+        features = [geojson_payload]
+    else:
+        raise ValueError('Unsupported GeoJSON type. Expected FeatureCollection or Feature.')
+
+    if not isinstance(features, list) or not features:
+        raise ValueError('GeoJSON does not contain any features.')
+
+    feature_count = len(features)
+
+    editor.reset_structure()
+
+    dataset_node = None
+    for node in editor.nodes.values():
+        if node.type == 'dataset':
+            dataset_node = node
+            break
+
+    if not dataset_node:
+        dataset_node = SHACLNode('dataset', title=dataset_name, description=f"Dataset imported from {source_filename}")
+        editor.nodes[dataset_node.id] = dataset_node
+
+    dataset_node.title = dataset_name
+    dataset_node.description = {'de': f"Dataset imported from {source_filename}"}
+
+    feature_class_name = geojson_payload.get('name') or dataset_name or Path(source_filename).stem or 'Feature'
+    class_node = SHACLNode('class', title=feature_class_name, description='Feature class extracted from GeoJSON')
+    class_node.identifier = slug_identifier(feature_class_name, fallback='feature')
+    class_node.local_name = class_node.identifier
+    editor.nodes[class_node.id] = class_node
+
+    dataset_edge_id = f"{dataset_node.id}-{class_node.id}"
+    editor.edges[dataset_edge_id] = {
+        'id': dataset_edge_id,
+        'from': dataset_node.id,
+        'to': class_node.id,
+        'cardinality': '1..1'
+    }
+    dataset_node.connections.add(class_node.id)
+    class_node.connections.add(dataset_node.id)
+
+    property_values: Dict[str, List[Any]] = {}
+    present_count: Dict[str, int] = {}
+    non_null_count: Dict[str, int] = {}
+    geometry_types = set()
+    geometry_present_count = 0
+
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+
+        properties = feature.get('properties')
+        if not isinstance(properties, dict):
+            properties = {}
+
+        for key, value in properties.items():
+            property_values.setdefault(key, []).append(value)
+            present_count[key] = present_count.get(key, 0) + 1
+            if value is not None:
+                non_null_count[key] = non_null_count.get(key, 0) + 1
+
+        geometry = feature.get('geometry')
+        if isinstance(geometry, dict):
+            geometry_type = geometry.get('type')
+            if geometry_type:
+                geometry_types.add(str(geometry_type))
+                geometry_present_count += 1
+
+    order = 0
+    for property_name in sorted(property_values.keys()):
+        values = property_values[property_name]
+        data_node = SHACLNode('data_element', title=property_name, description=f"GeoJSON property: {property_name}")
+        data_node.identifier = slug_identifier(property_name, fallback='field')
+        data_node.local_name = property_name
+        data_node.datatype = infer_geojson_datatype(values)
+        data_node.min_count = 1 if non_null_count.get(property_name, 0) == feature_count else 0
+        data_node.max_count = 1
+        data_node.order = order
+
+        text_values = sorted({str(v).strip() for v in values if isinstance(v, str) and str(v).strip()})
+        if 0 < len(text_values) <= 20:
+            data_node.in_values = text_values
+
+        editor.nodes[data_node.id] = data_node
+
+        edge_id = f"{class_node.id}-{data_node.id}"
+        editor.edges[edge_id] = {
+            'id': edge_id,
+            'from': class_node.id,
+            'to': data_node.id,
+            'cardinality': f"{data_node.min_count}..1"
+        }
+        class_node.connections.add(data_node.id)
+        data_node.connections.add(class_node.id)
+        order += 10
+
+    if geometry_types:
+        geometry_node = SHACLNode('data_element', title='geometry_type', description='Geometry type observed in GeoJSON features')
+        geometry_node.identifier = 'geometry_type'
+        geometry_node.local_name = 'geometry_type'
+        geometry_node.datatype = 'xsd:string'
+        geometry_node.min_count = 1 if geometry_present_count == feature_count else 0
+        geometry_node.max_count = 1
+        geometry_node.order = order
+        geometry_node.in_values = sorted(geometry_types)
+
+        editor.nodes[geometry_node.id] = geometry_node
+
+        edge_id = f"{class_node.id}-{geometry_node.id}"
+        editor.edges[edge_id] = {
+            'id': edge_id,
+            'from': class_node.id,
+            'to': geometry_node.id,
+            'cardinality': f"{geometry_node.min_count}..1"
+        }
+        class_node.connections.add(geometry_node.id)
+        geometry_node.connections.add(class_node.id)
+
 @app.route('/api/import/csv', methods=['POST'])
 def import_csv():
     """Import a CSV file and convert to SHACL TTL"""
@@ -5482,6 +5675,38 @@ def import_excel():
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": "Failed to import Excel file"}), 500
+
+
+@app.route('/api/import/geojson', methods=['POST'])
+def import_geojson():
+    """Import a GeoJSON file and extract a structure model from feature properties."""
+    editor = get_user_editor()
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file part"}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+
+        if not file.filename.lower().endswith(('.geojson', '.json')):
+            return jsonify({"error": "Only GeoJSON files (.geojson, .json) are supported"}), 400
+
+        dataset_name = request.form.get('dataset_name', os.path.splitext(file.filename)[0])
+        file_content = file.read()
+        geojson_data, _ = decode_uploaded_text(file_content)
+
+        try:
+            geojson_payload = json.loads(geojson_data)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Invalid GeoJSON/JSON file"}), 400
+
+        import_geojson_structure(editor, geojson_payload, dataset_name, file.filename)
+        return jsonify({"success": True})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        return jsonify({"error": "Failed to import GeoJSON file"}), 500
 
 
 @app.route('/api/import/xsd', methods=['POST'])

@@ -166,6 +166,12 @@
                             <input type="file" id="excel-file" accept=".xlsx,.xls" style="display: none;" onchange="showExcelImportModal(this)">
                             <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('excel-file').click()">Import Excel</button>
                         </div>
+
+                        <!-- GeoJSON Import -->
+                        <div class="mb-2">
+                            <input type="file" id="geojson-file" accept=".geojson,.json" style="display: none;" onchange="showGeoJSONImportModal(this)">
+                            <button class="btn btn-outline-dark btn-sm w-100" onclick="document.getElementById('geojson-file').click()">Import GeoJSON</button>
+                        </div>
                         
                         <!-- XSD Import -->
                         <div class="mb-3">
@@ -733,6 +739,35 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-primary" onclick="importExcel()">Import</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GeoJSON Import Modal -->
+    <div class="modal fade" id="geojsonImportModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Import GeoJSON</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="geojson-dataset-name" class="form-label">Dataset Name:</label>
+                        <input type="text" class="form-control" id="geojson-dataset-name" value="Imported Dataset">
+                        <div class="form-text">This will be the title of your dataset</div>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>
+                            <strong>Note:</strong> Feature properties are analyzed to infer attribute datatypes and optionality.
+                            Geometry types are added as a dedicated field.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="importGeoJSON()">Import</button>
                 </div>
             </div>
         </div>

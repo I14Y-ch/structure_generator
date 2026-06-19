@@ -2,6 +2,7 @@ const IMPORT_DEFAULT_DATASET_NAME = 'Imported Dataset';
 const IMPORT_ERROR_NO_FILE = 'No file selected';
 const IMPORT_ERROR_DATASET_REQUIRED = 'Dataset name is required';
 const IMPORT_SUCCESS_CSV_HTML = '<small><strong>Success:</strong> CSV file imported.</small>';
+const IMPORT_SUCCESS_GEOJSON_HTML = '<small><strong>Success:</strong> GeoJSON file imported.</small>';
 const IMPORT_SUCCESS_XSD_HTML = '<small><strong>Success:</strong> XSD file imported.</small>';
 
 function showSelectionStatus(html) {
@@ -161,6 +162,56 @@ function showXSDImportModal(fileInput) {
     showImportModal(fileInput, '.xsd', 'Please select an XSD file', 'xsdImportModal');
 }
 
+function showGeoJSONImportModal(fileInput) {
+    if (!fileInput.files || fileInput.files.length === 0) {
+        console.log('No file selected');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const isGeoJSON = file.name.match(/\.(geojson|json)$/i);
+    if (!isGeoJSON) {
+        alert('Please select a GeoJSON file (.geojson or .json)');
+        fileInput.value = '';
+        return;
+    }
+
+    const basename = file.name.replace(/\.(geojson|json)$/i, '');
+    document.getElementById('geojson-dataset-name').value = basename || IMPORT_DEFAULT_DATASET_NAME;
+
+    new bootstrap.Modal(document.getElementById('geojsonImportModal')).show();
+}
+
+function importGeoJSON() {
+    const fileData = getRequiredFile('geojson-file');
+    if (!fileData) {
+        return;
+    }
+
+    const { fileInput, file } = fileData;
+    const datasetName = getRequiredValue('geojson-dataset-name', IMPORT_ERROR_DATASET_REQUIRED);
+    if (!datasetName) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('dataset_name', datasetName);
+
+    runImportRequest({
+        url: '/api/import/geojson',
+        formData,
+        modalId: 'geojsonImportModal',
+        successHtml: IMPORT_SUCCESS_GEOJSON_HTML,
+        resetFormFields: () => {
+            document.getElementById('geojson-dataset-name').value = IMPORT_DEFAULT_DATASET_NAME;
+        },
+        errorLabel: 'Error importing GeoJSON'
+    });
+
+    fileInput.value = '';
+}
+
 // XSD Import function
 function importXSD() {
     const fileData = getRequiredFile('xsd-file');
@@ -196,6 +247,8 @@ function importXSD() {
 // Make sure all functions are exported to global scope
 window.showCSVImportModal = showCSVImportModal;
 window.importCSV = importCSV;
+window.showGeoJSONImportModal = showGeoJSONImportModal;
+window.importGeoJSON = importGeoJSON;
 window.showXSDImportModal = showXSDImportModal;
 window.importXSD = importXSD;
 
