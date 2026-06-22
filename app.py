@@ -22,11 +22,25 @@ from urllib.parse import quote
 from rdflib import Graph, Literal, Namespace, URIRef, BNode
 from rdflib.namespace import RDF, XSD, SH, OWL, RDFS, DCTERMS
 
-# Import CSV converter and XSD importer using relative imports if possible
+# Import export and import modules
 try:
-    from .csv_converter import csv_to_ttl
+    from .exports import generate_full_ttl, export_ttl_content
+    from .imports import (
+        import_ttl_file, parse_ttl_to_nodes, process_csv_ttl_import, csv_to_ttl,
+        import_excel_file, get_excel_sheet_names,
+        import_geojson_file, import_geojson_structure, infer_geojson_datatype,
+        import_xsd_file
+    )
 except ImportError:
-    from csv_converter import csv_to_ttl
+    from exports import generate_full_ttl, export_ttl_content
+    from imports import (
+        import_ttl_file, parse_ttl_to_nodes, process_csv_ttl_import, csv_to_ttl,
+        import_excel_file, get_excel_sheet_names,
+        import_geojson_file, import_geojson_structure, infer_geojson_datatype,
+        import_xsd_file
+    )
+
+# Import XSD importer using relative imports if possible
 try:
     from .xsd_importer import xsd_to_ttl
 except ImportError:
@@ -5118,16 +5132,8 @@ def import_ttl():
         # Read file content
         content = file.read().decode('utf-8')
         
-        # Parse TTL file using RDFLib
-        g = Graph()
-        g.parse(data=content, format='turtle')
-        
-        # Clear existing data
-        editor.nodes.clear()
-        editor.edges.clear()
-        
-        # Convert RDF graph back to SHACLNode objects
-        success = parse_ttl_to_nodes(g, editor)
+        # Use the import_ttl_file function from imports module
+        success = import_ttl_file(content, editor)
         
         if success:
             return jsonify({"success": True})
@@ -5616,11 +5622,8 @@ def import_excel_sheets():
         if not file.filename.lower().endswith(('.xlsx', '.xls')):
             return jsonify({"error": "Only Excel files (.xlsx, .xls) are supported"}), 400
 
-        import openpyxl
         file_content = file.read()
-        wb = openpyxl.load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
-        sheets = wb.sheetnames
-        wb.close()
+        sheets = get_excel_sheet_names(file_content)
         return jsonify({"success": True, "sheets": sheets})
     except Exception as e:
         return jsonify({"error": "Failed to read Excel workbook"}), 500
@@ -5643,36 +5646,13 @@ def import_excel():
         lang = request.form.get('lang', 'de')
         sheet_name = request.form.get('sheet', None)
 
-        import openpyxl
         file_content = file.read()
-        wb = openpyxl.load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
-
-        if sheet_name and sheet_name in wb.sheetnames:
-            ws = wb[sheet_name]
+        success, message = import_excel_file(file_content, dataset_name, sheet_name, lang, editor)
+        
+        if success:
+            return jsonify({"success": True})
         else:
-            ws = wb.active
-
-        # Convert the sheet to a CSV string
-        output = io.StringIO()
-        writer = csv.writer(output)
-        for row in ws.iter_rows(values_only=True):
-            writer.writerow(['' if v is None else str(v) for v in row])
-        csv_data = output.getvalue()
-        wb.close()
-
-        print(f"Importing Excel file: {file.filename}, sheet: {sheet_name}, dataset: {dataset_name}, lang: {lang}")
-
-        ttl = csv_to_ttl(csv_data, dataset_name, lang)
-        if not ttl:
-            return jsonify({"error": "Failed to convert Excel sheet to TTL"}), 500
-
-        try:
-            _process_csv_ttl_import(editor, ttl, file.filename, dataset_name)
-        except Exception as e:
-            # Continue with basic import even if advanced processing fails
-            pass
-
-        return jsonify({"success": True})
+            return jsonify({"error": message}), 500
     except Exception as e:
         return jsonify({"error": "Failed to import Excel file"}), 500
 
@@ -5694,15 +5674,13 @@ def import_geojson():
 
         dataset_name = request.form.get('dataset_name', os.path.splitext(file.filename)[0])
         file_content = file.read()
-        geojson_data, _ = decode_uploaded_text(file_content)
 
-        try:
-            geojson_payload = json.loads(geojson_data)
-        except json.JSONDecodeError:
-            return jsonify({"error": "Invalid GeoJSON/JSON file"}), 400
-
-        import_geojson_structure(editor, geojson_payload, dataset_name, file.filename)
-        return jsonify({"success": True})
+        success, message = import_geojson_file(file_content, dataset_name, editor)
+        
+        if success:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": message}), 400
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception:
@@ -5728,211 +5706,13 @@ def import_xsd():
         # Get dataset name from form data
         dataset_name = request.form.get('dataset_name', os.path.splitext(file.filename)[0])
         
-        print(f"Importing XSD file: {file.filename}, Dataset name: {dataset_name}")
+        file_content = file.read()
+        success, message = import_xsd_file(file_content, dataset_name, file.filename, editor)
         
-        # Read XSD data
-        xsd_data = file.read().decode('utf-8')
-        
-        # Convert to TTL
-        ttl = xsd_to_ttl(xsd_data, dataset_name)
-        
-        if not ttl:
-            return jsonify({"error": "Failed to convert XSD to TTL"}), 500
-            
-        print(f"Successfully converted XSD to TTL. Size: {len(ttl)} bytes")
-        
-        # Process the TTL to extract data structure
-        try:
-            # Use RDFLib to parse the TTL
-            g = Graph()
-            g.parse(data=ttl, format='turtle')
-            
-            # Reset full structure for a clean import session
-            editor.reset_structure()
-
-            # Get the freshly created dataset node and apply import metadata
-            dataset_node = None
-            for node in editor.nodes.values():
-                if node.type == 'dataset':
-                    dataset_node = node
-                    break
-
-            if not dataset_node:
-                dataset_node = SHACLNode('dataset', title=dataset_name, description=f"Dataset imported from {file.filename}")
-                editor.nodes[dataset_node.id] = dataset_node
-
-            dataset_node.title = dataset_name
-            dataset_node.description = f"Dataset imported from {file.filename}"
-            
-            print(f"Using dataset node: {dataset_node.id} with title: {dataset_node.title}")
-            
-            # Track processed node shapes for edge creation
-            processed_nodes = {}  # str(shape_uri) -> SHACLNode
-
-            # Helper: extract sh:name / rdfs:label from a shape URI
-            def _get_name(uri):
-                for _, _, v in g.triples((uri, SH.name, None)):
-                    return str(v)
-                for _, _, v in g.triples((uri, RDFS.label, None)):
-                    return str(v)
-                return ""
-
-            # Helper: extract identifier from URI fallback when no sh:name exists
-            def _get_identifier(uri):
-                return str(uri).split('/')[-1].split('#')[-1]
-
-            # Helper: extract best description
-            def _get_desc(uri):
-                for prop in [SH.description, RDFS.comment, DCTERMS.description]:
-                    for _, _, v in g.triples((uri, prop, None)):
-                        return str(v)
-                return ""
-
-            # Helper: extract constraints from a PropertyShape URI into a SHACLNode
-            def _apply_prop_constraints(node, uri):
-                for _, _, v in g.triples((uri, SH.datatype, None)):
-                    dt = str(v)
-                    # Convert full URI to prefixed form when possible
-                    if 'XMLSchema#' in dt:
-                        dt = 'xsd:' + dt.split('#')[-1]
-                    node.datatype = dt
-                    break
-                for _, _, v in g.triples((uri, SH.order, None)):
-                    try:
-                        node.order = int(v)
-                    except (ValueError, TypeError):
-                        node.order = None
-                    break
-                for _, _, v in g.triples((uri, SH.minCount, None)):
-                    try: node.min_count = int(v)
-                    except (ValueError, TypeError): pass
-                for _, _, v in g.triples((uri, SH.maxCount, None)):
-                    try: node.max_count = int(v)
-                    except (ValueError, TypeError): pass
-                for _, _, v in g.triples((uri, SH.minLength, None)):
-                    try: node.min_length = int(v)
-                    except (ValueError, TypeError): pass
-                for _, _, v in g.triples((uri, SH.maxLength, None)):
-                    try: node.max_length = int(v)
-                    except (ValueError, TypeError): pass
-                for _, _, v in g.triples((uri, SH.pattern, None)):
-                    node.pattern = str(v)
-                for _, _, v in g.triples((uri, SH.minInclusive, None)):
-                    node.min_inclusive = str(v)
-                for _, _, v in g.triples((uri, SH.maxInclusive, None)):
-                    node.max_inclusive = str(v)
-                for _, _, v in g.triples((uri, SH.minExclusive, None)):
-                    node.min_exclusive = str(v)
-                for _, _, v in g.triples((uri, SH.maxExclusive, None)):
-                    node.max_exclusive = str(v)
-                # sh:in enumeration
-                in_values = []
-                for _, _, head in g.triples((uri, SH['in'], None)):
-                    cur = head
-                    while cur and cur != RDF.nil:
-                        for _, _, first in g.triples((cur, RDF.first, None)):
-                            in_values.append(str(first))
-                        nexts = list(g.objects(cur, RDF.rest))
-                        cur = nexts[0] if nexts else None
-                if in_values:
-                    node.in_values = in_values
-
-            # --- Pass 1: create class nodes for all NodeShapes ---
-            node_shapes = [s for s, _, _ in g.triples((None, RDF.type, SH.NodeShape))]
-            print(f"Found {len(node_shapes)} NodeShapes in TTL")
-
-            for shape_uri in node_shapes:
-                node_name = _get_name(shape_uri)
-                node_identifier = _get_identifier(shape_uri)
-                description = _get_desc(shape_uri)
-                shacl_node = SHACLNode('class', title=node_name, description=description)
-                shacl_node.local_name = node_identifier
-                shacl_node.identifier = node_identifier
-                editor.nodes[shacl_node.id] = shacl_node
-                processed_nodes[str(shape_uri)] = shacl_node
-                print(f"Created class node: {node_identifier}")
-
-            # --- Pass 2: create data_element nodes for PropertyShapes inside each class ---
-            for shape_uri in node_shapes:
-                class_node = processed_nodes[str(shape_uri)]
-
-                for _, _, prop_uri in g.triples((shape_uri, SH.property, None)):
-                    prop_name = _get_name(prop_uri)
-                    prop_identifier = _get_identifier(prop_uri)
-                    description = _get_desc(prop_uri)
-
-                    # If this PropertyShape has sh:node pointing to a known class,
-                    # create a class-to-class edge instead of a data element
-                    node_targets = list(g.objects(prop_uri, SH.node))
-                    if node_targets and str(node_targets[0]) in processed_nodes:
-                        target_class = processed_nodes[str(node_targets[0])]
-                        edge_id = f"{class_node.id}-{target_class.id}"
-                        if edge_id not in editor.edges:
-                            editor.edges[edge_id] = {
-                                'id': edge_id,
-                                'from': class_node.id,
-                                'to': target_class.id,
-                                'cardinality': '1..1'
-                            }
-                            class_node.connections.add(target_class.id)
-                            target_class.connections.add(class_node.id)
-                            print(f"Connected class {class_node.title} -> class {target_class.title}")
-                        continue
-
-                    # Regular data element
-                    de_node = SHACLNode('data_element', title=prop_name, description=description)
-                    de_node.local_name = prop_identifier
-                    _apply_prop_constraints(de_node, prop_uri)
-
-                    editor.nodes[de_node.id] = de_node
-
-                    # Connect data element to its parent class
-                    cardinality = "1..1"
-                    min_counts = list(g.objects(prop_uri, SH.minCount))
-                    max_counts = list(g.objects(prop_uri, SH.maxCount))
-                    if min_counts or max_counts:
-                        min_c = int(min_counts[0]) if min_counts else 0
-                        max_c = int(max_counts[0]) if max_counts else None
-                        cardinality = f"{min_c}..{'n' if max_c is None else max_c}"
-
-                    edge_id = f"{class_node.id}-{de_node.id}"
-                    editor.edges[edge_id] = {
-                        'id': edge_id,
-                        'from': class_node.id,
-                        'to': de_node.id,
-                        'cardinality': cardinality
-                    }
-                    class_node.connections.add(de_node.id)
-                    de_node.connections.add(class_node.id)
-                    print(f"Created data_element: {prop_name} -> class {class_node.title}")
-
-            # --- Pass 3: connect top-level class nodes to the dataset ---
-            # A class is "top-level" when no other class references it via sh:node
-            referenced_classes = set()
-            for _, prop_uri, _ in g.triples((None, SH.property, None)):
-                for _, _, node_ref in g.triples((prop_uri, SH.node, None)):
-                    if str(node_ref) in processed_nodes:
-                        referenced_classes.add(str(node_ref))
-
-            for shape_uri, class_node in processed_nodes.items():
-                if shape_uri not in referenced_classes:
-                    edge_id = f"{dataset_node.id}-{class_node.id}"
-                    if edge_id not in editor.edges:
-                        editor.edges[edge_id] = {
-                            'id': edge_id,
-                            'from': dataset_node.id,
-                            'to': class_node.id,
-                            'cardinality': '1..1'
-                        }
-                        dataset_node.connections.add(class_node.id)
-                        class_node.connections.add(dataset_node.id)
-
-            print(f"Successfully processed XSD. Created {len(processed_nodes)} class nodes and {len(editor.edges)} edges.")
-        except Exception as e:
-            # Continue with basic import even if advanced processing fails
-            pass
-        
-        return jsonify({"success": True})
+        if success:
+            return jsonify({"success": True})
+        else:
+            return jsonify({"error": message}), 500
     except Exception as e:
         return jsonify({"error": "An internal error occurred."}), 500
 
