@@ -1316,23 +1316,21 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         return preserve_id(base, fallback="property")
 
     def node_export_id(node) -> str:
-        """Resolve URI segment from explicit identifier only."""
+        """Resolve URI segment from identifier and safe fallbacks."""
         identifier = getattr(node, 'identifier', None)
         if isinstance(identifier, dict):
             identifier = get_text_value(identifier, 'de')
 
-        text = str(identifier).strip() if identifier is not None else ""
-        if not text:
-            node_type = getattr(node, 'type', 'unknown')
-            node_title = getattr(node, 'title', '')
-            if isinstance(node_title, dict):
-                node_title = get_text_value(node_title, 'de')
-            raise ValueError(
-                f"Missing identifier for node type '{node_type}' with title '{node_title}'. "
-                "Identifier is required for URI generation."
-            )
+        candidates = [identifier, getattr(node, 'local_name', None), getattr(node, 'title', None), getattr(node, 'id', None)]
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                candidate = get_text_value(candidate, 'de')
+            text = str(candidate).strip() if candidate is not None else ""
+            if text:
+                return norm_id(text)
 
-        return norm_id(text)
+        node_type = getattr(node, 'type', 'unknown')
+        return preserve_id(node_type, fallback="property")
 
     # Create dataset NodeShape
     dataset_shape = URIRef(f"{i14y_ns}{dataset_id}")
