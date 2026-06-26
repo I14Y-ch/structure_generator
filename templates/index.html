@@ -1421,8 +1421,23 @@
                             console.log('Data element is linked to concept:', node.conforms_to_concept_uri);
                             console.log('I14Y data available:', node.i14y_data);
                             
-                            // Extract concept ID from URI for I14Y link
-                            const conceptId = node.conforms_to_concept_uri.split('/').slice(-2, -1)[0];
+                            // Extract concept identifier from I14Y data or URI.
+                            const conceptId = (() => {
+                                const data = node.i14y_data || {};
+                                if (data.identifier) return data.identifier;
+                                if (Array.isArray(data.identifiers) && data.identifiers.length > 0) {
+                                    const firstIdentifier = data.identifiers[0];
+                                    if (typeof firstIdentifier === 'string') return firstIdentifier;
+                                    return firstIdentifier.notation || firstIdentifier.identifier || firstIdentifier.value || data.id || '';
+                                }
+
+                                const uriParts = node.conforms_to_concept_uri.split('/').filter(Boolean);
+                                const registerIndex = uriParts.indexOf('concept');
+                                if (registerIndex !== -1 && uriParts[registerIndex + 1]) return uriParts[registerIndex + 1];
+                                const catalogIndex = uriParts.indexOf('concepts');
+                                if (catalogIndex !== -1 && uriParts[catalogIndex + 1]) return uriParts[catalogIndex + 1];
+                                return data.id || uriParts[uriParts.length - 1] || '';
+                            })();
                             
                             // Show concept information if available from i14y_data
                             if (node.i14y_data) {
@@ -1448,7 +1463,7 @@
                                         ${typeInfo}
                                         <strong>Publisher:</strong> ${escapeHtml(conceptPublisher)}<br>
                                         <strong>Description:</strong> <span class="small text-muted">${escapeHtml(truncatedDescription)}</span><br>
-                                        <strong>Concept ID:</strong> <code class="small">${escapeHtml(conceptId)}</code>
+                                        <strong>Concept identifier:</strong> <code class="small">${escapeHtml(conceptId)}</code>
                                     </div>
                                 `;
                             } else {
@@ -1456,7 +1471,7 @@
                                 conceptDetails = `
                                     <div class="mb-3 p-3 border rounded bg-light">
                                         <h6 class="text-primary mb-2">🔗 Linked I14Y Concept</h6>
-                                        <strong>Concept ID:</strong> <code class="small">${escapeHtml(conceptId)}</code><br>
+                                        <strong>Concept identifier:</strong> <code class="small">${escapeHtml(conceptId)}</code><br>
                                         <small class="text-muted">Concept details not available locally</small>
                                     </div>
                                 `;

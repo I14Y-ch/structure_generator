@@ -353,7 +353,7 @@ def csv_to_ttl(csv_data: str, dataset_name: str, default_lang: str = "de") -> Op
     dataset_identifier = dataset_name.replace(' ', '_').replace('-', '_')
     
     # Base URI for I14Y
-    base_uri = f"https://www.i14y.admin.ch/resources/datasets/{dataset_identifier}/structure/"
+    base_uri = f"https://register.ld.admin.ch/i14y/dataset/{dataset_identifier}/structure/"
     
     # Create transformer
     transformer = CSVToSHACL(base_uri, default_lang=default_lang)

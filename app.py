@@ -119,7 +119,7 @@ class I14YAPIClient:
     """Client for interacting with I14Y API"""
     
     def __init__(self):
-        self.base_url = "https://core.i14y.c.bfs.admin.ch/api/Catalog"
+        self.base_url = "https://core.i14y.c.bfs.admin.ch/api"
         
     def search_concepts(self, query='', page=1, page_size=20):
         """Search for concepts using the I14Y API
@@ -734,6 +734,40 @@ class SHACLNode:
         return f"https://register.ld.admin.ch/i14y/concept/{quote(identifier, safe='')}"
 
     @classmethod
+    def resolve_i14y_concept_uri(
+        cls,
+        concept_data: Optional[Dict] = None,
+        fallback_uri: Optional[str] = None
+    ) -> Optional[str]:
+        """Resolve the URI to use for dcterms:conformsTo."""
+        candidates = []
+
+        if isinstance(concept_data, dict):
+            built_uri = cls.build_i14y_concept_uri(concept_data)
+            if built_uri:
+                candidates.append(built_uri)
+
+            data_uri = concept_data.get('uri')
+            if isinstance(data_uri, str):
+                candidates.append(data_uri)
+
+        if isinstance(fallback_uri, str):
+            candidates.append(fallback_uri)
+
+        cleaned_candidates = []
+        for candidate in candidates:
+            candidate = candidate.strip()
+            if candidate and candidate != '#':
+                cleaned_candidates.append(candidate)
+
+        register_prefix = "https://register.ld.admin.ch/i14y/concept/"
+        for candidate in cleaned_candidates:
+            if candidate.startswith(register_prefix):
+                return candidate
+
+        return cleaned_candidates[0] if cleaned_candidates else None
+
+    @classmethod
     def build_i14y_dataset_uri(cls, dataset_data: Dict) -> Optional[str]:
         """Build dataset permalink using register.ld.admin.ch pattern."""
         identifier = cls._extract_i14y_identifier(dataset_data)
@@ -770,7 +804,10 @@ class SHACLNode:
         
         # Link to concept via conformsTo
         data_element.is_linked_to_concept = True
-        data_element.conforms_to_concept_uri = concept_node.i14y_concept_uri
+        data_element.conforms_to_concept_uri = SHACLNode.resolve_i14y_concept_uri(
+            concept_node.i14y_data,
+            concept_node.i14y_concept_uri
+        )
         
         # Inherit constraints from concept
         data_element.datatype = concept_node.datatype
@@ -841,7 +878,10 @@ class SHACLNode:
             self.description = {'de': str(desc_obj)} if desc_obj else {'de': ''}
         
         # Set the concept URI for TTL export
-        self.i14y_concept_uri = SHACLNode.build_i14y_concept_uri(concept_data)
+        self.i14y_concept_uri = SHACLNode.resolve_i14y_concept_uri(
+            concept_data,
+            concept_data.get('uri') if isinstance(concept_data, dict) else None
+        )
         
         # Determine appropriate datatype based on concept metadata
         self._determine_datatype()
@@ -1206,15 +1246,19 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         slug = slug.strip("_-")
         return slug or fallback
 
-    # Generate a normalized ASCII dataset ID from title
-    dataset_title_str = get_text_value(dataset_node.title, 'de')
-    dataset_id = slug_id(dataset_title_str, fallback="dataset")
+    # Use the business identifier for the dataset namespace, with title fallback.
+    dataset_identifier_str = get_text_value(getattr(dataset_node, 'identifier', None), 'de').strip()
+    if dataset_identifier_str:
+        dataset_id = quote(dataset_identifier_str, safe='')
+    else:
+        dataset_title_str = get_text_value(dataset_node.title, 'de')
+        dataset_id = slug_id(dataset_title_str, fallback="dataset")
 
     # Create RDF graph
     g = Graph()
 
     # Bind namespaces
-    i14y_ns = Namespace(f"https://www.i14y.admin.ch/resources/datasets/{dataset_id}/structure/")
+    i14y_ns = Namespace(f"https://register.ld.admin.ch/i14y/dataset/{dataset_id}/structure/")
     QB = Namespace("http://purl.org/linked-data/cube#")
     g.bind("rdf", RDF)
     g.bind("rdfs", RDFS)
@@ -1251,32 +1295,25 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         uri_lang_tracker[key] = sanitized_content
         return True
     
-    def normalize_concept_uri(uri_str: str) -> str:
-        """Normalize any i14y concept URI to the canonical form used in exports.
-        Target format: https://www.i14y.admin.ch/en/catalog/concepts/{uuid}
-        """
-        uuid_match = re.search(
-            r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
-            uri_str, re.IGNORECASE
+    def resolve_conforms_to_uri(node) -> Optional[str]:
+        """Resolve the best dcterms:conformsTo URI for a node."""
+        fallback_uri = None
+
+        if hasattr(node, 'conforms_to_concept_uri') and node.conforms_to_concept_uri:
+            fallback_uri = node.conforms_to_concept_uri
+        elif hasattr(node, 'i14y_concept_uri') and node.i14y_concept_uri:
+            fallback_uri = node.i14y_concept_uri
+
+        return SHACLNode.resolve_i14y_concept_uri(
+            getattr(node, 'i14y_data', None),
+            fallback_uri
         )
-        if uuid_match:
-            return f"https://www.i14y.admin.ch/en/catalog/concepts/{uuid_match.group(1)}"
-        return uri_str
 
     def safe_add_conforms_to(uri, node):
         """Safely add dcterms:conformsTo if node has concept reference"""
-        conforms_to_uri = None
-        
-        # For data elements, use the conformsTo URI
-        if hasattr(node, 'conforms_to_concept_uri') and node.conforms_to_concept_uri:
-            conforms_to_uri = node.conforms_to_concept_uri
-        # For concepts with I14Y URI, use that
-        elif hasattr(node, 'i14y_concept_uri') and node.i14y_concept_uri:
-            conforms_to_uri = node.i14y_concept_uri
-            
+        conforms_to_uri = resolve_conforms_to_uri(node)
+
         if conforms_to_uri:
-            # Normalize to canonical example format
-            conforms_to_uri = normalize_concept_uri(conforms_to_uri)
             # Check if already exists to prevent duplicates
             existing = list(g.triples((uri, DCTERMS.conformsTo, URIRef(conforms_to_uri))))
             if not existing:
@@ -1903,7 +1940,7 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 @prefix xml: <http://www.w3.org/XML/1998/namespace>.
 @prefix QB: <http://purl.org/linked-data/cube#>.
 @prefix dcterms: <http://purl.org/dc/terms/>.
-@prefix i14y: <https://www.i14y.admin.ch/resources/datasets/{dataset_id}/structure/>.
+@prefix i14y: <https://register.ld.admin.ch/i14y/dataset/{dataset_id}/structure/>.
 @prefix owl: <http://www.w3.org/2002/07/owl#>.
 @prefix pav: <http://purl.org/pav/>.
 @prefix schema: <https://schema.org/>.
@@ -2578,7 +2615,7 @@ class FlaskSHACLGraphEditor:
         self.nodes = {}  # Dictionary of nodes keyed by ID
         self.edges = {}  # Dictionary of edges keyed by ID (format: "node1_id-node2_id")
         self.i14y_client = I14YAPIClient()
-        self.base_uri = "https://www.i14y.admin.ch/resources/datasets/shacl_editor/structure/"
+        self.base_uri = "https://register.ld.admin.ch/i14y/dataset/shacl_editor/structure/"
     
     def add_node(self, node_data):
         """Add a new node to the graph"""
@@ -3293,7 +3330,7 @@ def create_data_element():
             
             # If concept_data is provided, link to I14Y concept during creation
             if concept_data:
-                concept_uri = SHACLNode.build_i14y_concept_uri(concept_data)
+                concept_uri = SHACLNode.resolve_i14y_concept_uri(concept_data, data.get('concept_uri'))
                 if concept_uri:
                     data_element.conforms_to_concept_uri = concept_uri
                     data_element.is_linked_to_concept = True
@@ -3468,7 +3505,11 @@ def link_node_to_i14y_concept():
         original_description = node.description
         
         # Link to concept
-        node.conforms_to_concept_uri = concept_uri
+        resolved_concept_uri = SHACLNode.resolve_i14y_concept_uri(concept_data, concept_uri)
+        if not resolved_concept_uri:
+            return jsonify({"error": "Could not resolve I14Y concept URI"}), 400
+
+        node.conforms_to_concept_uri = resolved_concept_uri
         node.is_linked_to_concept = True
         node.i14y_data = concept_data
         
@@ -3538,7 +3579,7 @@ def link_data_element_to_concept(data_element_id):
         original_local_name = data_element.local_name
         
         # Create concept URI for conformsTo
-        concept_uri = SHACLNode.build_i14y_concept_uri(concept_data)
+        concept_uri = SHACLNode.resolve_i14y_concept_uri(concept_data, data.get('concept_uri'))
         if concept_uri:
             data_element.conforms_to_concept_uri = concept_uri
             data_element.is_linked_to_concept = True
