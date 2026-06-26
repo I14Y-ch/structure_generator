@@ -445,7 +445,7 @@ def generate_shacl(xsd_root, dataset_identifier):
     # Define I14Y namespace based on dataset identifier - URL encode the dataset identifier to avoid invalid URIs
     import urllib.parse
     encoded_dataset_identifier = urllib.parse.quote(dataset_identifier)
-    i14y_base_path = f"https://www.i14y.admin.ch/resources/datasets/{encoded_dataset_identifier}/structure/"
+    i14y_base_path = f"https://register.ld.admin.ch/i14y/dataset/{encoded_dataset_identifier}/structure/"
     I14Y = Namespace(i14y_base_path)
     
     # Bind namespaces
