@@ -728,7 +728,11 @@ function selectI14YLinkResult(index) {
         title: title,
         description: description,
         type: result.type || 'Concept',
-        publisherName: publisher  // Use publisherName to match UI expectations
+        publisherName: publisher,  // Use publisherName to match UI expectations
+        identifier: result.identifier,
+        identifiers: result.identifiers || [],
+        version: result.version,
+        versions: result.versions || []
     };
     
     // Send the link request to the server
