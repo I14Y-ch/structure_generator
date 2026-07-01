@@ -1554,7 +1554,10 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
         # Sort data elements by order field (if set), then by title
         class_data_elements_sorted = sorted(
             class_data_elements,
-            key=lambda de: (de.order if de.order is not None else float('inf'), de.title)
+            key=lambda de: (
+                de.order if de.order is not None else float('inf'),
+                get_text_value(de.title, 'de') if de.title else ""
+            )
         )
         
         for data_element in class_data_elements_sorted:
@@ -1767,7 +1770,10 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
     # Sort data elements by order field (if set), then by title
     connected_data_elements_sorted = sorted(
         connected_data_elements,
-        key=lambda de: (de.order if de.order is not None else float('inf'), de.title)
+        key=lambda de: (
+            de.order if de.order is not None else float('inf'),
+            get_text_value(de.title, 'de') if de.title else ""
+        )
     )
     
     for data_element in connected_data_elements_sorted:
