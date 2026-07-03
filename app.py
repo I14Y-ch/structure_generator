@@ -2599,6 +2599,11 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_TYPE'] = 'filesystem'
 
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'}), 200
+
 # Add the /api/reset endpoint
 @app.route('/api/reset', methods=['POST'])
 def reset_structure_api():
