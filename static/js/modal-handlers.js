@@ -449,6 +449,225 @@ function showLinkToI14YModal() {
     searchForI14YLink(''); // Load initial results
 }
 
+let createI14YConceptNodeId = null;
+
+function parseApiJsonResponse(response) {
+    return response.text().then((text) => {
+        let data = {};
+        if (text && text.trim()) {
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                data = { error: text };
+            }
+        }
+        return { ok: response.ok, status: response.status, data };
+    });
+}
+
+function setCreateI14YStatus(message, kind = 'info') {
+    const statusEl = document.getElementById('create-i14y-status');
+    if (!statusEl) {
+        return;
+    }
+
+    const cssClass = kind === 'error' ? 'text-danger' : (kind === 'success' ? 'text-success' : 'text-muted');
+    statusEl.className = `small ${cssClass}`;
+    statusEl.textContent = message || '';
+}
+
+function showCreateI14YConceptModal() {
+    const selectedNode = getSingleSelectedNode();
+    if (!selectedNode || !selectedNode.id) {
+        alert('Please select exactly one data element first.');
+        return;
+    }
+
+    if (selectedNode.type && selectedNode.type !== 'data_element') {
+        alert('Only data element nodes can be used to create an I14Y concept.');
+        return;
+    }
+
+    createI14YConceptNodeId = selectedNode.id;
+
+    const tokenInput = document.getElementById('create-i14y-token');
+    const orgSection = document.getElementById('create-i14y-organisation-section');
+    const orgSelect = document.getElementById('create-i14y-organisation');
+    const successBox = document.getElementById('create-i14y-success');
+
+    if (tokenInput) {
+        tokenInput.value = '';
+    }
+    if (orgSection) {
+        orgSection.style.display = 'none';
+    }
+    if (orgSelect) {
+        orgSelect.innerHTML = '';
+    }
+    if (successBox) {
+        successBox.style.display = 'none';
+        successBox.innerHTML = '';
+    }
+
+    setCreateI14YStatus('Provide your token, verify it, then create the concept.', 'info');
+    new bootstrap.Modal(document.getElementById('createI14YConceptModal')).show();
+}
+
+function verifyI14YCreateConceptToken() {
+    const tokenInput = document.getElementById('create-i14y-token');
+    const verifyBtn = document.getElementById('create-i14y-verify-btn');
+    const orgSection = document.getElementById('create-i14y-organisation-section');
+    const orgSelect = document.getElementById('create-i14y-organisation');
+
+    if (!tokenInput || !verifyBtn || !orgSection || !orgSelect) {
+        return;
+    }
+
+    const token = (tokenInput.value || '').trim();
+    if (!token) {
+        setCreateI14YStatus('Please enter your I14Y token.', 'error');
+        return;
+    }
+
+    if (!token.toLowerCase().startsWith('bearer ')) {
+        setCreateI14YStatus("Token must start with 'Bearer '.", 'error');
+        return;
+    }
+
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = 'Verifying...';
+    orgSection.style.display = 'none';
+    setCreateI14YStatus('Verifying token and loading organisations...', 'info');
+
+    fetch('/api/i14y/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token })
+    })
+    .then(parseApiJsonResponse)
+    .then(({ ok, data }) => {
+        if (!ok || !data.success) {
+            setCreateI14YStatus(data.error || 'Token verification failed.', 'error');
+            return;
+        }
+
+        const agencies = Array.isArray(data.agencies) ? data.agencies : [];
+        if (agencies.length === 0) {
+            setCreateI14YStatus('No organisations found for this token.', 'error');
+            return;
+        }
+
+        orgSelect.innerHTML = '';
+        agencies.forEach((agency) => {
+            const option = document.createElement('option');
+            option.value = agency.identifier;
+
+            let agencyName = agency.identifier;
+            if (agency.name && typeof agency.name === 'object') {
+                agencyName = agency.name.de || agency.name.en || agency.name.fr || agency.name.it || agency.identifier;
+            } else if (typeof agency.name === 'string' && agency.name.trim()) {
+                agencyName = agency.name;
+            }
+
+            option.textContent = `${agencyName} (${agency.identifier})`;
+            orgSelect.appendChild(option);
+        });
+
+        if (data.preselected_agency) {
+            orgSelect.value = data.preselected_agency;
+        }
+
+        orgSection.style.display = 'block';
+        setCreateI14YStatus('Token verified. Select organisation and click Create Concept.', 'success');
+    })
+    .catch((error) => {
+        setCreateI14YStatus(`Error verifying token: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'Verify Token';
+    });
+}
+
+function submitCreateI14YConcept() {
+    const tokenInput = document.getElementById('create-i14y-token');
+    const orgSelect = document.getElementById('create-i14y-organisation');
+    const successBox = document.getElementById('create-i14y-success');
+
+    if (!createI14YConceptNodeId) {
+        setCreateI14YStatus('No data element selected.', 'error');
+        return;
+    }
+
+    const token = (tokenInput && tokenInput.value ? tokenInput.value : '').trim();
+    if (!token) {
+        setCreateI14YStatus('Please enter your I14Y token.', 'error');
+        return;
+    }
+    if (!token.toLowerCase().startsWith('bearer ')) {
+        setCreateI14YStatus("Token must start with 'Bearer '.", 'error');
+        return;
+    }
+
+    const organisationIdentifier = (orgSelect && orgSelect.value ? orgSelect.value : '').trim();
+    if (!organisationIdentifier) {
+        setCreateI14YStatus('Please verify token and select an organisation first.', 'error');
+        return;
+    }
+
+    setCreateI14YStatus('Creating concept on I14Y...', 'info');
+    if (successBox) {
+        successBox.style.display = 'none';
+        successBox.innerHTML = '';
+    }
+
+    const inValuesInput = document.getElementById('in-values');
+    const enumerationValues = inValuesInput && typeof inValuesInput.value === 'string'
+        ? inValuesInput.value
+            .split(/[\n,;]+/)
+            .map(value => value.trim())
+            .filter(value => value.length > 0)
+        : [];
+
+    fetch('/api/i14y/concepts/create-from-data-element', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            node_id: createI14YConceptNodeId,
+            token: token,
+            organisation_identifier: organisationIdentifier,
+            enumeration_values: enumerationValues
+        })
+    })
+    .then(parseApiJsonResponse)
+    .then(({ ok, data }) => {
+        if (!ok || !data.success) {
+            setCreateI14YStatus(data.error || 'Failed to create concept.', 'error');
+            if (successBox && data.concept_url) {
+                successBox.style.display = 'block';
+                successBox.innerHTML = `<div class="alert alert-warning mb-0"><strong>Concept was created:</strong> <a href="${data.concept_url}" target="_blank">${data.concept_url}</a><br><small>But adding codelist entries failed.</small></div>`;
+            }
+            return;
+        }
+
+        const conceptUrl = data.concept_url;
+        const codelistInfo = Number.isFinite(Number(data.codelist_entries_created)) && Number(data.codelist_entries_created) > 0
+            ? ` (${Number(data.codelist_entries_created)} codelist entries added)`
+            : '';
+        setCreateI14YStatus(`Concept created${codelistInfo}. Open it in I14Y and publish manually there.`, 'success');
+
+        if (successBox) {
+            successBox.style.display = 'block';
+            successBox.innerHTML = conceptUrl
+                ? `<div class="alert alert-success mb-0"><strong>Created concept:</strong> <a href="${conceptUrl}" target="_blank">${conceptUrl}</a></div>`
+                : '<div class="alert alert-success mb-0">Concept created successfully.</div>';
+        }
+    })
+    .catch((error) => {
+        setCreateI14YStatus(`Error creating concept: ${error.message}`, 'error');
+    });
+}
+
 // Global variable to store the latest link search results
 let lastLinkI14YSearchResults = [];
 
@@ -1211,6 +1430,9 @@ function importTTL(fileInput) {
 window.showLinkToI14YModal = showLinkToI14YModal;
 window.searchForI14YLink = searchForI14YLink;
 window.selectI14YLinkResult = selectI14YLinkResult;
+window.showCreateI14YConceptModal = showCreateI14YConceptModal;
+window.verifyI14YCreateConceptToken = verifyI14YCreateConceptToken;
+window.submitCreateI14YConcept = submitCreateI14YConcept;
 
 // I14Y Dataset Search Modal handler
 function showI14YDatasetSearchModal() {

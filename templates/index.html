@@ -238,7 +238,6 @@
                             <p class="small text-muted mb-2">Set the order for this data element in the TTL export. Lower numbers appear first.</p>
                             <label class="form-label small">Order:</label>
                             <input type="number" class="form-control form-control-sm mb-2" id="element-order" placeholder="e.g. 2" min="0">
-                            <button class="btn btn-outline-dark btn-sm w-100" onclick="applyOrder()">Apply Order</button>
                         </div>
                     </div>
 
@@ -315,10 +314,7 @@
                                 </div>
                             </div>
 
-                            <div class="d-flex gap-2">
-                                <button class="btn btn-outline-dark btn-sm flex-fill" onclick="applyConstraints()">Apply</button>
-                                <button class="btn btn-outline-secondary btn-sm flex-fill" onclick="clearConstraints()">Clear</button>
-                            </div>
+                            <button class="btn btn-outline-secondary btn-sm w-100" onclick="clearConstraints()">Clear</button>
                         </div>
                     </div>
                 </div>
@@ -646,6 +642,47 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create I14Y Concept Modal -->
+    <div class="modal fade" id="createI14YConceptModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create I14Y Concept</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <small>
+                            <strong>Note:</strong> Enter your I14Y partner token (must start with <code>Bearer </code>),
+                            select the organisation, and create a concept draft in I14Y Input.
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="create-i14y-token" class="form-label">I14Y Token</label>
+                        <input type="text" class="form-control" id="create-i14y-token" placeholder="Bearer ...">
+                    </div>
+
+                    <div class="d-grid mb-3">
+                        <button type="button" class="btn btn-outline-secondary" id="create-i14y-verify-btn" onclick="verifyI14YCreateConceptToken()">Verify Token</button>
+                    </div>
+
+                    <div class="mb-3" id="create-i14y-organisation-section" style="display:none;">
+                        <label for="create-i14y-organisation" class="form-label">Organisation</label>
+                        <select class="form-select" id="create-i14y-organisation"></select>
+                    </div>
+
+                    <div id="create-i14y-status" class="small"></div>
+                    <div id="create-i14y-success" class="mt-2" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="submitCreateI14YConcept()">Create Concept</button>
                 </div>
             </div>
         </div>
@@ -1348,7 +1385,6 @@
                                 </div>
                                 ${isLinked ? '<small class="text-muted">Description is managed on I14Y</small>' : ''}
                             </div>
-                            ${isLinked ? '' : '<button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDatasetInfo()">Update Dataset</button>'}
                             ${node.i14y_dataset_uri ? '' : '<button class="btn btn-dataset btn-sm w-100 mb-2" onclick="showI14YDatasetSearchModal()">Link to I14Y Dataset</button>'}
                             ${i14yDatasetInfo}
                         `;
@@ -1427,7 +1463,6 @@
                                         </div>
                                     </div>
                                 </div>
-                                <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
                                 <button class="btn btn-warning btn-sm w-100 mb-2" onclick="confirmConvertToDataset()">Convert to Dataset</button>
                             `;
                         } else {
@@ -1527,9 +1562,12 @@
                         } else {
                             conceptLinkInfo = `
                                 <div class="mb-3">
-                                    <div class="d-grid">
+                                    <div class="d-grid gap-2">
                                         <button class="btn btn-concept btn-sm" onclick="showLinkDataElementToConceptModal()">
                                             Link to I14Y Concept
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm" onclick="showCreateI14YConceptModal()">
+                                            Create I14Y concept
                                         </button>
                                     </div>
                                 </div>
@@ -1608,7 +1646,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateDataElementInfo()">Update Data Element</button>
                             ${conceptLinkInfo}
                         `;
                     } else {
@@ -1626,7 +1663,6 @@
                                     <label for="edit-node-description" class="form-label small">Description:</label>
                                     <textarea class="form-control form-control-sm" id="edit-node-description" rows="3">${getLanguageText(node.description, 'de') || getLanguageText(node.description, 'en') || ''}</textarea>
                                 </div>
-                                <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="updateNodeInfo()">Update ${node.type}</button>
                                 <button class="btn btn-concept btn-sm w-100 mb-2" onclick="showLinkToI14YModal()">Link to I14Y Concept</button>
                                 ${i14yLink}
                                 ${publisher}
