@@ -13,6 +13,7 @@ let connectionMode = false;
 let pendingConnection = null;
 let zoom; // Zoom behavior
 let physicsEnabled = true; // Physics simulation toggle
+let preserveLayoutOnNextRender = false; // Keep exact positions when only metadata changed
 
 // Initialize the D3 visualization
 function initializeD3Visualization(containerId) {
@@ -233,6 +234,15 @@ function loadGraphWithD3() {
             if (debugEl) {
                 debugEl.innerHTML += '<div>D3 visualization initialized, rendering...</div>';
             }
+
+            const previousNodeIds = new Set(nodes.map(n => n.id));
+            const previousEdgeKeys = new Set(
+                links.map(link => {
+                    const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+                    const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+                    return `${sourceId}->${targetId}`;
+                })
+            );
             
             // Snapshot current node positions so we can preserve them when physics is off
             const currentPositionMap = new Map();
@@ -309,6 +319,28 @@ function loadGraphWithD3() {
                     }
                     return valid;
                 });
+
+            const incomingNodeIds = new Set(nodes.map(node => node.id));
+            const incomingEdgeKeys = new Set(links.map(edge => `${edge.source}->${edge.target}`));
+            const sameNodes = previousNodeIds.size === incomingNodeIds.size &&
+                Array.from(previousNodeIds).every(id => incomingNodeIds.has(id));
+            const sameEdges = previousEdgeKeys.size === incomingEdgeKeys.size &&
+                Array.from(previousEdgeKeys).every(key => incomingEdgeKeys.has(key));
+            const topologyUnchanged = sameNodes && sameEdges;
+
+            if (topologyUnchanged) {
+                nodes.forEach(node => {
+                    const saved = currentPositionMap.get(node.id);
+                    if (saved && saved.x != null && saved.y != null) {
+                        node.x = saved.x;
+                        node.y = saved.y;
+                        node.fx = saved.x;
+                        node.fy = saved.y;
+                    }
+                });
+            }
+
+            preserveLayoutOnNextRender = topologyUnchanged && currentPositionMap.size > 0;
 
             if (skippedEdges.length > 0) {
                 console.warn('Skipped invalid edges with missing endpoints:', skippedEdges);
@@ -481,6 +513,7 @@ function getNodeColor(d) {
 
 // Helper to get the display label: prefer local_name (identifier) over title
 function getNodeTitle(d) {
+    if (d.identifier) return d.identifier;
     // Use local_name as identifier if available (set during XSD/CSV import)
     if (d.local_name) return d.local_name;
     let title = d.title;
@@ -565,15 +598,19 @@ function getWrappedTitle(d) {
         .on('end', dragEnd));
     
     // If physics is off, stop simulation and render positions immediately (no animation)
-    if (!physicsEnabled) {
+    if (!physicsEnabled || preserveLayoutOnNextRender) {
         simulation.stop();
         simulation.tick(1); // advance positions one step to resolve link endpoints
         applyPositions();   // paint those positions to the DOM right now
-        fitToView();
+        if (!preserveLayoutOnNextRender) {
+            fitToView();
+        }
     } else {
         // Fit to view once the simulation has cooled down
         simulation.on('end', fitToView);
     }
+
+    preserveLayoutOnNextRender = false;
 
     console.log('Visualization rendered successfully');
     console.log('Simulation created:', simulation);
@@ -588,6 +625,12 @@ function getWrappedTitle(d) {
     
     // Debug: Check SVG structure
     console.log('SVG structure:', g.node());
+
+    if (selectedNode) {
+        applyNodeFocusStyles(selectedNode);
+    } else if (selectedLink) {
+        applyLinkFocusStyles(selectedLink);
+    }
 }
 
 // Drag functions
@@ -644,6 +687,136 @@ function dragEnd(event, d) {
 
 // Global array to store selected nodes
 let selectedNodes = [];
+
+function clearGraphFocusStyles() {
+    d3.selectAll('.node')
+        .classed('selected', false)
+        .style('opacity', 1)
+        .select('rect')
+        .attr('stroke', '#222')
+        .attr('stroke-width', 2)
+        .style('filter', null);
+
+    d3.selectAll('.node text')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#222')
+        .style('text-shadow', null);
+
+    d3.selectAll('.link')
+        .classed('selected', false)
+        .style('opacity', 0.85)
+        .attr('stroke', d => d.color)
+        .attr('stroke-width', d => d.width || 1);
+
+    d3.selectAll('.link-label').style('opacity', 0.85);
+}
+
+function applyNodeFocusStyles(nodeId) {
+    if (!nodeId) {
+        clearGraphFocusStyles();
+        return;
+    }
+
+    const connectedNodeIds = new Set([nodeId]);
+
+    d3.selectAll('.link')
+        .style('opacity', link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            const isConnected = sourceId === nodeId || targetId === nodeId;
+            if (isConnected) {
+                connectedNodeIds.add(sourceId);
+                connectedNodeIds.add(targetId);
+            }
+            return isConnected ? 0.95 : 0.18;
+        })
+        .attr('stroke', link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            return (sourceId === nodeId || targetId === nodeId) ? '#ff5c8a' : (link.color || '#848484');
+        })
+        .attr('stroke-width', link => {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            return (sourceId === nodeId || targetId === nodeId) ? 2.8 : (link.width || 1);
+        });
+
+    d3.selectAll('.link-label')
+        .style('opacity', label => {
+            const sourceId = typeof label.source === 'object' ? label.source.id : label.source;
+            const targetId = typeof label.target === 'object' ? label.target.id : label.target;
+            return (sourceId === nodeId || targetId === nodeId) ? 0.95 : 0.25;
+        });
+
+    d3.selectAll('.node')
+        .style('opacity', n => {
+            if (n.id === nodeId) return 1;
+            return connectedNodeIds.has(n.id) ? 0.8 : 0.35;
+        })
+        .classed('selected', n => n.id === nodeId);
+
+    d3.selectAll('.node').each(function(n) {
+        const nodeSelection = d3.select(this);
+        if (n.id === nodeId) {
+            nodeSelection.raise();
+            nodeSelection.select('rect')
+                .attr('stroke', '#ff0055')
+                .attr('stroke-width', 6)
+                .style('filter', 'drop-shadow(0 0 12px rgba(255, 0, 85, 0.85))');
+            nodeSelection.selectAll('text')
+                .attr('font-weight', '900')
+                .attr('fill', '#111')
+                .style('text-shadow', '1px 1px 2px rgba(255, 255, 255, 0.9)');
+        } else {
+            nodeSelection.select('rect')
+                .attr('stroke', '#222')
+                .attr('stroke-width', 2)
+                .style('filter', null);
+            nodeSelection.selectAll('text')
+                .attr('font-weight', 'bold')
+                .attr('fill', '#222')
+                .style('text-shadow', null);
+        }
+    });
+}
+
+function applyLinkFocusStyles(linkId) {
+    if (!linkId) {
+        clearGraphFocusStyles();
+        return;
+    }
+
+    let connectedNodeIds = new Set();
+    d3.selectAll('.link').each(link => {
+        if (link.id === linkId) {
+            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+            connectedNodeIds = new Set([sourceId, targetId]);
+        }
+    });
+
+    d3.selectAll('.link')
+        .classed('selected', link => link.id === linkId)
+        .style('opacity', link => link.id === linkId ? 1 : 0.18)
+        .attr('stroke', link => link.id === linkId ? '#ff0055' : (link.color || '#848484'))
+        .attr('stroke-width', link => link.id === linkId ? 4 : (link.width || 1));
+
+    d3.selectAll('.link-label')
+        .style('opacity', label => label.id === linkId ? 1 : 0.2);
+
+    d3.selectAll('.node')
+        .classed('selected', false)
+        .style('opacity', n => connectedNodeIds.has(n.id) ? 0.85 : 0.35)
+        .select('rect')
+        .attr('stroke', '#222')
+        .attr('stroke-width', 2)
+        .style('filter', null);
+
+    d3.selectAll('.node text')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#222')
+        .style('text-shadow', null);
+}
 
 // Handle node click
 function handleNodeClick(event, d) {
@@ -754,40 +927,12 @@ function handleNodeClick(event, d) {
         // Set the selected node
         selectedNode = d.id;
         selectedLink = null;
-        
-        // Highlight the selected node with enhanced visual feedback
-        d3.select(event.currentTarget)
-            .classed('selected', true)
-            .select('rect')
-            .attr('stroke', '#ff0000')
-            .attr('stroke-width', 4)
-            .style('filter', 'drop-shadow(0 0 6px rgba(255, 0, 0, 0.5))');
-        
-        // Make text bolder and change color
-        d3.select(event.currentTarget)
-            .select('text')
-            .attr('font-weight', 'bolder')
-            .attr('fill', '#000')
-            .style('text-shadow', '1px 1px 2px rgba(255, 255, 255, 0.8)');
+        applyNodeFocusStyles(selectedNode);
     } else {
         // Clicked same node again - clear selection
         selectedNode = null;
         selectedNodes = [];
-        
-        // Clear highlighting
-        d3.select(event.currentTarget)
-            .classed('selected', false)
-            .select('rect')
-            .attr('stroke', '#222')
-            .attr('stroke-width', 2)
-            .style('filter', null);
-        
-        // Reset text styling
-        d3.select(event.currentTarget)
-            .select('text')
-            .attr('font-weight', 'bold')
-            .attr('fill', '#222')
-            .style('text-shadow', null);
+        clearGraphFocusStyles();
         
         // Update selection status
         updateSelectionStatus();
@@ -822,22 +967,7 @@ function handleLinkClick(event, d) {
     selectedLink = d.id;
     
     // Highlight the selected link
-    d3.selectAll('.link')
-        .classed('selected', l => l.id === d.id);
-    
-    // Unhighlight any selected node
-    d3.selectAll('.node')
-        .classed('selected', false)
-        .select('rect')
-        .attr('stroke', '#222')
-        .attr('stroke-width', 2)
-        .style('filter', null);
-    
-    // Reset text styling for all nodes
-    d3.selectAll('.node text:first-of-type')
-        .attr('font-weight', 'bold')
-        .attr('fill', '#222')
-        .style('text-shadow', null);
+    applyLinkFocusStyles(d.id);
     
     // Show the detach button
     document.getElementById('detach-btn').style.display = 'block';
@@ -1004,18 +1134,7 @@ function resetView() {
     selectedLink = null;
     
     // Reset node styles
-    d3.selectAll('.node')
-        .classed('selected', false)
-        .select('rect')
-        .attr('stroke', '#222')
-        .attr('stroke-width', 2)
-        .style('filter', null);
-    
-    // Reset text styling for all nodes
-    d3.selectAll('.node text:first-of-type')
-        .attr('font-weight', 'bold')
-        .attr('fill', '#222')
-        .style('text-shadow', null);
+    clearGraphFocusStyles();
     
     // Request layout from server
     fetch('/api/graph/layout')
@@ -1106,21 +1225,7 @@ function handleBackgroundClick(event) {
     updateSelectionStatus();
     
     // Unhighlight all nodes and links
-    d3.selectAll('.node')
-        .classed('selected', false)
-        .select('rect')
-        .attr('stroke', '#222')
-        .attr('stroke-width', 2)
-        .style('filter', null);
-    
-    // Reset text styling for all nodes
-    d3.selectAll('.node text')
-        .attr('font-weight', 'bold')
-        .attr('fill', '#222')
-        .style('text-shadow', null);
-    
-    d3.selectAll('.link')
-        .classed('selected', false);
+    clearGraphFocusStyles();
     
     // Hide node and edge panels, show the no-selection message
     if (window.clearNodeSelection) {
