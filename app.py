@@ -8,6 +8,7 @@ import tempfile
 import requests
 import re
 import ast
+import base64
 import uuid
 import threading
 import time
@@ -597,6 +598,268 @@ class I14YAPIClient:
                 return []
         except Exception as e:
             return []
+
+    @staticmethod
+    def _clean_bearer_token(raw_token: str) -> str:
+        token = (raw_token or '').strip()
+        if token.lower().startswith('bearer '):
+            return token[7:].strip()
+        return token
+
+    def decode_token_payload(self, raw_token: str) -> Dict[str, Any]:
+        """Decode JWT payload without signature validation (for UX metadata only)."""
+        clean_token = self._clean_bearer_token(raw_token)
+        parts = clean_token.split('.')
+        if len(parts) < 2:
+            return {}
+
+        try:
+            payload = parts[1]
+            payload += '=' * ((4 - len(payload) % 4) % 4)
+            decoded = base64.urlsafe_b64decode(payload.encode('utf-8')).decode('utf-8')
+            payload_data = json.loads(decoded)
+            return payload_data if isinstance(payload_data, dict) else {}
+        except Exception:
+            return {}
+
+    def extract_user_email_from_token(self, raw_token: str) -> Optional[str]:
+        payload = self.decode_token_payload(raw_token)
+        for key in ('email', 'upn', 'preferred_username'):
+            value = payload.get(key)
+            if isinstance(value, str) and '@' in value:
+                return value.strip()
+        return None
+
+    def fetch_partner_agents(self, raw_token: str) -> List[Dict[str, Any]]:
+        """Fetch organisations available for the provided partner token."""
+        clean_token = self._clean_bearer_token(raw_token)
+        if not clean_token:
+            return []
+
+        url = 'https://api.i14y.admin.ch/api/partner/v1/agents'
+        headers = {
+            'accept': 'application/json',
+            'Authorization': f'Bearer {clean_token}'
+        }
+
+        try:
+            response = requests.get(url, headers=headers, timeout=20)
+            if response.status_code != 200:
+                return []
+
+            data = response.json()
+            if isinstance(data, dict) and isinstance(data.get('data'), list):
+                return data['data']
+            if isinstance(data, list):
+                return data
+            return []
+        except Exception:
+            return []
+
+    def create_partner_concept(self, raw_token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a concept via the I14Y partner API."""
+        clean_token = self._clean_bearer_token(raw_token)
+        if not clean_token:
+            return {'success': False, 'status': 401, 'error': 'Missing token'}
+
+        url = 'https://api.i14y.admin.ch/api/partner/v1/concepts'
+        headers = {
+            'accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {clean_token}'
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+
+            if response.status_code == 201:
+                guid = None
+                raw_body = response.text.strip()
+
+                try:
+                    response_json = response.json()
+                except ValueError:
+                    response_json = None
+
+                if isinstance(response_json, str):
+                    guid = response_json.strip()
+                elif isinstance(response_json, dict):
+                    guid = (
+                        response_json.get('guid') or
+                        response_json.get('id') or
+                        response_json.get('data')
+                    )
+
+                if not guid and raw_body:
+                    guid = raw_body.strip('"')
+
+                return {
+                    'success': True,
+                    'status': 201,
+                    'guid': guid,
+                    'response': response_json if response_json is not None else raw_body
+                }
+
+            error_message = 'I14Y API request failed'
+            try:
+                error_json = response.json()
+                if isinstance(error_json, dict):
+                    error_message = (
+                        error_json.get('detail') or
+                        error_json.get('title') or
+                        error_json.get('message') or
+                        error_json.get('error') or
+                        error_message
+                    )
+
+                    # Include field-level validation details when available.
+                    validation_errors = error_json.get('errors')
+                    if isinstance(validation_errors, dict):
+                        details = []
+                        for field, messages in validation_errors.items():
+                            if isinstance(messages, list):
+                                details.extend([f"{field}: {msg}" for msg in messages])
+                            elif isinstance(messages, str):
+                                details.append(f"{field}: {messages}")
+                        if details:
+                            error_message = f"{error_message} | " + ' ; '.join(details)
+            except ValueError:
+                if response.text:
+                    error_message = response.text
+
+            return {
+                'success': False,
+                'status': response.status_code,
+                'error': str(error_message).strip() or 'I14Y API request failed'
+            }
+        except requests.RequestException as e:
+            return {
+                'success': False,
+                'status': 500,
+                'error': f'Network error while contacting I14Y API: {e}'
+            }
+
+    def create_partner_codelist_entries(
+        self,
+        raw_token: str,
+        concept_guid: str,
+        entries: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Import codelist entries for an existing concept via partner API."""
+        clean_token = self._clean_bearer_token(raw_token)
+        if not clean_token:
+            return {'success': False, 'status': 401, 'error': 'Missing token'}
+
+        if not concept_guid:
+            return {'success': False, 'status': 400, 'error': 'Missing concept GUID'}
+
+        if not entries:
+            return {'success': True, 'status': 200, 'entries_created': 0}
+
+        guid = concept_guid.strip().strip('/')
+        url = f'https://api.i14y.admin.ch/api/partner/v1/concepts/{guid}/codelist-entries/imports/Json'
+        headers = {
+            'accept': 'application/json',
+            'Authorization': f'Bearer {clean_token}'
+        }
+
+        def normalize_codelist_code(raw_value: Any, index: int) -> str:
+            raw_text = str(raw_value or '').strip()
+            if raw_text:
+                normalized = unicodedata.normalize('NFKD', raw_text)
+                normalized = ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+                normalized = re.sub(r'\s+', '_', normalized)
+                normalized = re.sub(r'[^A-Za-z0-9_.-]', '_', normalized)
+                normalized = re.sub(r'_+', '_', normalized)
+                normalized = normalized.strip('_.-')
+                if normalized:
+                    return normalized
+
+            return f'CODE_{index + 1}'
+
+        used_codes = set()
+        payload_entries = []
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+
+            base_code = normalize_codelist_code(entry.get('code'), index)
+            code = base_code
+            suffix = 2
+            while code in used_codes:
+                code = f"{base_code}_{suffix}"
+                suffix += 1
+            used_codes.add(code)
+
+            name = entry.get('name')
+            if not isinstance(name, dict):
+                name = {'de': code}
+            payload_entries.append({
+                'conceptId': guid,
+                'code': code,
+                'name': name
+            })
+
+        if not payload_entries:
+            return {'success': True, 'status': 200, 'entries_created': 0}
+
+        payload_variants = [
+            payload_entries,
+            {'data': payload_entries}
+        ]
+
+        last_status = 500
+        last_error = 'Failed to create codelist entries on I14Y'
+
+        for payload_variant in payload_variants:
+            payload_bytes = json.dumps(payload_variant, ensure_ascii=False).encode('utf-8')
+            files = {
+                'file': ('codelist_entries.json', io.BytesIO(payload_bytes), 'application/json')
+            }
+
+            try:
+                response = requests.post(url, headers=headers, files=files, timeout=30)
+            except requests.RequestException as e:
+                last_status = 500
+                last_error = f'Network error while contacting I14Y API: {e}'
+                continue
+
+            if response.status_code in (200, 201, 202, 204):
+                response_json = None
+                try:
+                    response_json = response.json()
+                except ValueError:
+                    response_json = response.text.strip()
+
+                return {
+                    'success': True,
+                    'status': response.status_code,
+                    'entries_created': len(payload_entries),
+                    'response': response_json
+                }
+
+            last_status = response.status_code
+            try:
+                error_json = response.json()
+                if isinstance(error_json, dict):
+                    title = error_json.get('title') or ''
+                    detail = error_json.get('detail') or error_json.get('message') or error_json.get('error') or ''
+                    trace_id = error_json.get('traceId') or ''
+                    composed = ' '.join(part for part in [title, detail] if part).strip()
+                    if trace_id:
+                        composed = f"{composed} (traceId: {trace_id})" if composed else f"traceId: {trace_id}"
+                    last_error = composed or str(error_json)
+                else:
+                    last_error = str(error_json)
+            except ValueError:
+                if response.text:
+                    last_error = response.text.strip()
+
+        return {
+            'success': False,
+            'status': last_status,
+            'error': last_error or 'Failed to create codelist entries on I14Y'
+        }
 
 class SHACLNode:
     """Represents a node in the SHACL graph"""
@@ -3014,6 +3277,7 @@ def get_graph():
             'title': node.title,
             'description': node.description,
             'type': node_type,
+            'identifier': node.identifier if hasattr(node, 'identifier') else None,
             'local_name': node.local_name if hasattr(node, 'local_name') else None,
             'order': node.order if hasattr(node, 'order') else None,
             'i14y_id': node.i14y_id if hasattr(node, 'i14y_id') else None,
@@ -4428,6 +4692,254 @@ def search_i14y():
         return jsonify({"concepts": results})
     except Exception as e:
         return jsonify({"error": "Failed to search I14Y concepts", "concepts": []}), 500
+
+
+@app.route('/api/i14y/agents', methods=['POST'])
+def get_i14y_agents_for_token():
+    """Resolve organisations available for an I14Y bearer token."""
+    editor = get_user_editor()
+
+    if not request.is_json:
+        return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
+
+    data = request.json or {}
+    raw_token = (data.get('token') or '').strip()
+
+    if not raw_token:
+        return jsonify({'success': False, 'error': 'Token is required'}), 400
+
+    if not raw_token.lower().startswith('bearer '):
+        return jsonify({'success': False, 'error': "Token must start with 'Bearer '"}), 400
+
+    agents = editor.i14y_client.fetch_partner_agents(raw_token)
+    if not agents:
+        return jsonify({'success': False, 'error': 'No organisations found for this token'}), 400
+
+    agencies: List[Dict[str, Any]] = []
+    seen_identifiers = set()
+    for agent in agents:
+        if not isinstance(agent, dict):
+            continue
+
+        identifier = (agent.get('identifier') or '').strip()
+        if not identifier or identifier in seen_identifiers:
+            continue
+
+        name = agent.get('name') or agent.get('prefLabel') or {'de': identifier}
+        agencies.append({
+            'identifier': identifier,
+            'name': name
+        })
+        seen_identifiers.add(identifier)
+
+    if not agencies:
+        return jsonify({'success': False, 'error': 'No organisations with identifiers found for this token'}), 400
+
+    payload_data = editor.i14y_client.decode_token_payload(raw_token)
+    preselected_agency = None
+    for agency_claim in payload_data.get('agencies', []) if isinstance(payload_data.get('agencies'), list) else []:
+        if not isinstance(agency_claim, str):
+            continue
+        candidate = agency_claim.split('\\')[0].strip()
+        if candidate and any(a['identifier'] == candidate for a in agencies):
+            preselected_agency = candidate
+            break
+
+    return jsonify({
+        'success': True,
+        'agencies': agencies,
+        'preselected_agency': preselected_agency,
+        'user_email': editor.i14y_client.extract_user_email_from_token(raw_token)
+    })
+
+
+@app.route('/api/i14y/concepts/create-from-data-element', methods=['POST'])
+def create_i14y_concept_from_data_element():
+    """Create an I14Y concept from a data element node."""
+    editor = get_user_editor()
+
+    if not request.is_json:
+        return jsonify({'success': False, 'error': 'Request must be JSON'}), 400
+
+    data = request.json or {}
+    node_id = data.get('node_id')
+    raw_token = (data.get('token') or '').strip()
+    organisation_identifier = (data.get('organisation_identifier') or '').strip()
+    raw_enumeration_values = data.get('enumeration_values')
+
+    if not node_id:
+        return jsonify({'success': False, 'error': 'Node ID is required'}), 400
+    if not raw_token:
+        return jsonify({'success': False, 'error': 'Token is required'}), 400
+    if not raw_token.lower().startswith('bearer '):
+        return jsonify({'success': False, 'error': "Token must start with 'Bearer '"}), 400
+    if not organisation_identifier:
+        return jsonify({'success': False, 'error': 'Organisation identifier is required'}), 400
+
+    if node_id not in editor.nodes:
+        return jsonify({'success': False, 'error': 'Node not found'}), 404
+
+    node = editor.nodes[node_id]
+    if node.type != 'data_element':
+        return jsonify({'success': False, 'error': 'Only data element nodes can be used'}), 400
+
+    user_email = editor.i14y_client.extract_user_email_from_token(raw_token)
+    if not user_email:
+        return jsonify({
+            'success': False,
+            'error': 'Could not extract user email from token. Please use a token with email/upn claim.'
+        }), 400
+
+    def normalize_multilang(value: Any, fallback: str = '') -> Dict[str, str]:
+        if isinstance(value, dict):
+            result = {}
+            for lang in ('de', 'en', 'fr', 'it', 'rm'):
+                text = value.get(lang)
+                if isinstance(text, str) and text.strip():
+                    result[lang] = text.strip()
+            if result:
+                return result
+
+        if isinstance(value, str) and value.strip():
+            return {'de': value.strip()}
+
+        if fallback:
+            return {'de': fallback}
+
+        return {'de': 'Untitled concept'}
+
+    def concept_identifier_from_node(n: SHACLNode) -> str:
+        base = n.identifier or n.local_name or ''
+        if not base:
+            title = n.get_multilingual_title()
+            base = title.get('de') or title.get('en') or 'concept'
+
+        identifier = re.sub(r'\s+', '_', str(base).strip())
+        identifier = re.sub(r'[^A-Za-z0-9_-]', '', identifier)
+        identifier = identifier.strip('_-')
+        return identifier[:120] or 'concept'
+
+    def normalize_enumeration_values(values: Any) -> List[str]:
+        if not isinstance(values, list):
+            return []
+
+        cleaned: List[str] = []
+        seen = set()
+        for value in values:
+            if value is None:
+                continue
+            text = str(value).strip()
+            if not text:
+                continue
+            if text in seen:
+                continue
+            cleaned.append(text)
+            seen.add(text)
+        return cleaned
+
+    titles = normalize_multilang(node.get_multilingual_title(), fallback='Untitled concept')
+    descriptions = normalize_multilang(
+        node.get_multilingual_description(),
+        fallback=f"Concept created from data element '{titles.get('de') or titles.get('en') or concept_identifier_from_node(node)}'"
+    )
+
+    concept_data: Dict[str, Any] = {
+        'name': titles,
+        'description': descriptions,
+        'publisher': {'identifier': organisation_identifier},
+        'responsiblePerson': {'email': user_email},
+        'version': '1.0.0',
+        'identifier': concept_identifier_from_node(node)
+    }
+
+    request_enumeration_values = normalize_enumeration_values(raw_enumeration_values)
+    node_enumeration_values = normalize_enumeration_values(getattr(node, 'in_values', []))
+    enumeration_values = request_enumeration_values or node_enumeration_values
+
+    is_codelist_concept = len(enumeration_values) > 0
+
+    if is_codelist_concept:
+        concept_data['conceptType'] = 'CodeList'
+        concept_data['codeListEntryValueType'] = 'String'
+        longest_value_length = max((len(value) for value in enumeration_values), default=0)
+        concept_data['codeListEntryValueMaxLength'] = max(1, longest_value_length)
+        concept_data['codeListEntryDefaultSortProperty'] = 'Code'
+
+    if not is_codelist_concept:
+        datatype = (node.datatype or '').lower()
+        if datatype in ('xsd:integer', 'xsd:int', 'xsd:decimal', 'xsd:float', 'xsd:double'):
+            concept_data['conceptType'] = 'Numeric'
+            concept_data['minValue'] = 0
+            concept_data['maxValue'] = 999999999
+            concept_data['numberDecimals'] = 0 if datatype in ('xsd:integer', 'xsd:int') else 2
+            if node.pattern:
+                concept_data['pattern'] = node.pattern
+        elif datatype in ('xsd:date', 'xsd:datetime'):
+            concept_data['conceptType'] = 'Date'
+            if node.pattern:
+                concept_data['pattern'] = node.pattern
+        else:
+            concept_data['conceptType'] = 'String'
+            min_length = node.min_length if isinstance(node.min_length, int) and node.min_length >= 0 else 0
+            max_length = node.max_length if isinstance(node.max_length, int) and node.max_length > 0 else 255
+            if max_length < min_length:
+                max_length = min_length
+
+            concept_data['minLength'] = min_length
+            concept_data['maxLength'] = max_length
+            if node.pattern:
+                concept_data['pattern'] = node.pattern
+
+    payload = {'data': concept_data}
+    result = editor.i14y_client.create_partner_concept(raw_token, payload)
+
+    if not result.get('success'):
+        return jsonify({
+            'success': False,
+            'error': result.get('error', 'Failed to create concept on I14Y')
+        }), result.get('status', 500)
+
+    concept_guid = result.get('guid')
+    if concept_guid and isinstance(concept_guid, str):
+        concept_guid = concept_guid.strip().strip('/')
+
+    concept_url = f"https://input.i14y.admin.ch/catalog/concepts/{concept_guid}/" if concept_guid else None
+
+    codelist_entries_created = 0
+    if is_codelist_concept and concept_guid:
+        entries_payload = [
+            {
+                'code': value,
+                'name': {'de': value}
+            }
+            for value in enumeration_values
+        ]
+        entries_result = editor.i14y_client.create_partner_codelist_entries(
+            raw_token,
+            concept_guid,
+            entries_payload
+        )
+
+        if not entries_result.get('success'):
+            return jsonify({
+                'success': False,
+                'error': (
+                    'Concept was created, but codelist entries could not be added automatically. '
+                    + entries_result.get('error', 'Unknown error')
+                ),
+                'concept_guid': concept_guid,
+                'concept_url': concept_url
+            }), entries_result.get('status', 500)
+
+        codelist_entries_created = int(entries_result.get('entries_created') or len(entries_payload))
+
+    return jsonify({
+        'success': True,
+        'concept_guid': concept_guid,
+        'concept_url': concept_url,
+        'concept_type': concept_data.get('conceptType'),
+        'codelist_entries_created': codelist_entries_created
+    })
 
 @app.route('/api/i14y/dataset/search', methods=['GET'])
 def search_i14y_datasets():

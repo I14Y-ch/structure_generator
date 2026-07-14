@@ -142,6 +142,7 @@ function convertToTreeData(graphData) {
     });
 
     const resolveLabel = node => {
+        if (node && node.identifier) return node.identifier;
         if (node && node.local_name) return node.local_name;
         if (node && typeof node.title === 'object') {
             return node.title.de || node.title.en || node.title.fr || node.title.it || Object.values(node.title)[0] || '';
@@ -364,8 +365,8 @@ function renderXmlTree(graphData) {
         }
         
         // Calculate box size based on content
-        // Get title - prefer local_name (identifier), fall back to multilingual title
-        let label = nodeData.local_name;
+        // Get title - prefer identifier, then local_name, then multilingual title
+        let label = nodeData.identifier || nodeData.local_name;
         if (!label) {
             label = nodeData.title;
             if (typeof label === 'object') {

@@ -4,7 +4,6 @@ Extracts structural model from GeoJSON feature properties
 """
 
 from typing import Dict, List, Any, Tuple
-from pathlib import Path
 import re
 
 
@@ -103,26 +102,9 @@ def import_geojson_structure(editor, geojson_payload: Dict[str, Any], dataset_na
     dataset_node.title = dataset_name
     dataset_node.description = {'de': f"Dataset imported from {source_filename}"}
     
-    # Infer feature type
-    feature_type = geo_type or 'Feature'
-    class_node = SHACLNode('class', title=feature_type, description=f"Feature type from {source_filename}")
-    class_node.local_name = slug_identifier(feature_type)
-    class_node.identifier = slug_identifier(feature_type)
-    editor.nodes[class_node.id] = class_node
-
-    # Connect class to dataset
-    edge_id = f"{dataset_node.id}-{class_node.id}"
-    editor.edges[edge_id] = {
-        'id': edge_id,
-        'from': dataset_node.id,
-        'to': class_node.id,
-        'cardinality': '1..n'
-    }
-    dataset_node.connections.add(class_node.id)
-    class_node.connections.add(dataset_node.id)
-
-    # Analyze properties from features
+    # Analyze properties from features and derive occurrence-based cardinality
     collected_properties = {}
+    non_null_counts = {}
     for feature in features:
         props = feature.get('properties', {})
         if isinstance(props, dict):
@@ -130,25 +112,30 @@ def import_geojson_structure(editor, geojson_payload: Dict[str, Any], dataset_na
                 if key not in collected_properties:
                     collected_properties[key] = []
                 collected_properties[key].append(value)
+                if value is not None:
+                    non_null_counts[key] = non_null_counts.get(key, 0) + 1
 
     # Create data element nodes for each property
     for prop_name, values in collected_properties.items():
         datatype = infer_geojson_datatype(values)
-        de_node = SHACLNode('data_element', title=prop_name, description=f"Property from GeoJSON")
+        de_node = SHACLNode('data_element', title=prop_name, description=f"")
         de_node.datatype = datatype
+        de_node.identifier = slug_identifier(prop_name)
         de_node.local_name = slug_identifier(prop_name)
+        de_node.min_count = 1 if non_null_counts.get(prop_name, 0) == feature_count else 0
+        de_node.max_count = 1
         editor.nodes[de_node.id] = de_node
 
-        # Connect to class
-        edge_id = f"{class_node.id}-{de_node.id}"
+        # Connect properties directly to dataset (no intermediate FeatureCollection class)
+        edge_id = f"{dataset_node.id}-{de_node.id}"
         editor.edges[edge_id] = {
             'id': edge_id,
-            'from': class_node.id,
+            'from': dataset_node.id,
             'to': de_node.id,
-            'cardinality': '0..1'
+            'cardinality': f"{de_node.min_count}..1"
         }
-        class_node.connections.add(de_node.id)
-        de_node.connections.add(class_node.id)
+        dataset_node.connections.add(de_node.id)
+        de_node.connections.add(dataset_node.id)
 
     # Add geometry if present
     if features and 'geometry' in features[0]:
@@ -161,15 +148,15 @@ def import_geojson_structure(editor, geojson_payload: Dict[str, Any], dataset_na
             geom_node.local_name = 'geometry'
             editor.nodes[geom_node.id] = geom_node
 
-            edge_id = f"{class_node.id}-{geom_node.id}"
+            edge_id = f"{dataset_node.id}-{geom_node.id}"
             editor.edges[edge_id] = {
                 'id': edge_id,
-                'from': class_node.id,
+                'from': dataset_node.id,
                 'to': geom_node.id,
                 'cardinality': '1..1'
             }
-            class_node.connections.add(geom_node.id)
-            geom_node.connections.add(class_node.id)
+            dataset_node.connections.add(geom_node.id)
+            geom_node.connections.add(dataset_node.id)
 
     return True, f"Imported {feature_count} GeoJSON features successfully"
 

@@ -30,6 +30,14 @@ function showActionError(errorLabel, error) {
     console.error(`${errorLabel}:`, error);
 }
 
+function showActionErrorIfNeeded(errorLabel, error, options = {}) {
+    if (options.silent) {
+        console.error(`${errorLabel}:`, error);
+        return;
+    }
+    showActionError(errorLabel, error);
+}
+
 function showImportModal(fileInput, extension, invalidFileMessage, modalId) {
     if (!fileInput.files || fileInput.files.length === 0) {
         console.log('No file selected');
@@ -349,7 +357,7 @@ window.showExcelImportModal = showExcelImportModal;
 window.importExcel = importExcel;
 
 // Update dataset information
-function updateDatasetInfo() {
+function updateDatasetInfo(options = {}) {
     // Collect multilingual titles
     const title = {
         de: document.getElementById('edit-dataset-title-de').value.trim(),
@@ -372,11 +380,13 @@ function updateDatasetInfo() {
     // Check if at least one title is provided
     const hasTitle = Object.values(title).some(t => t.length > 0);
     if (!hasTitle) {
-        alert('At least one title (in any language) is required');
-        return;
+        if (!options.silent) {
+            alert('At least one title (in any language) is required');
+        }
+        return Promise.resolve(false);
     }
 
-    fetch('/api/dataset', {
+    return fetch('/api/dataset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -391,21 +401,28 @@ function updateDatasetInfo() {
             showSuccessStatus('Dataset updated.');
 
             // Reload the graph to show updated information
-            loadGraphWithD3();
+            if (options.reloadGraph !== false) {
+                loadGraphWithD3();
+            }
+            return true;
         } else {
-            showActionError('Error updating dataset', getApiErrorMessage(data));
+            showActionErrorIfNeeded('Error updating dataset', getApiErrorMessage(data), options);
+            return false;
         }
     })
     .catch(error => {
-        showActionError('Error updating dataset', error);
+        showActionErrorIfNeeded('Error updating dataset', error, options);
+        return false;
     });
 }
 
 // Update data element information
-function updateDataElementInfo() {
+function updateDataElementInfo(options = {}) {
     if (!window.selectedNodeId) {
-        alert('No data element selected');
-        return;
+        if (!options.silent) {
+            alert('No data element selected');
+        }
+        return Promise.resolve(false);
     }
 
     const title = {
@@ -429,11 +446,13 @@ function updateDataElementInfo() {
     const identifier = document.getElementById('edit-data-element-identifier').value.trim();
 
     if (!localName) {
-        alert('At least one title (in any language) is required');
-        return;
+        if (!options.silent) {
+            alert('At least one title (in any language) is required');
+        }
+        return Promise.resolve(false);
     }
 
-    fetch(`/api/data-elements/${window.selectedNodeId}`, {
+    return fetch(`/api/data-elements/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -449,21 +468,28 @@ function updateDataElementInfo() {
             showSuccessStatus('Data element updated.');
             
             // Reload the graph to show updated information
-            loadGraphWithD3();
+            if (options.reloadGraph !== false) {
+                loadGraphWithD3();
+            }
+            return true;
         } else {
-            showActionError('Error updating data element', getApiErrorMessage(data));
+            showActionErrorIfNeeded('Error updating data element', getApiErrorMessage(data), options);
+            return false;
         }
     })
     .catch(error => {
-        showActionError('Error updating data element', error);
+        showActionErrorIfNeeded('Error updating data element', error, options);
+        return false;
     });
 }
 
 // Update node information (for class and concept nodes)
-function updateNodeInfo() {
+function updateNodeInfo(options = {}) {
     if (!window.selectedNodeId) {
-        alert('No node selected');
-        return;
+        if (!options.silent) {
+            alert('No node selected');
+        }
+        return Promise.resolve(false);
     }
 
     // Check if we're editing a class node (has multilingual title fields)
@@ -486,15 +512,19 @@ function updateNodeInfo() {
             en: document.getElementById('edit-class-description-en').value
         };
         if (!title.de && !title.fr && !title.it && !title.en) {
-            alert('At least one title is required');
-            return;
+            if (!options.silent) {
+                alert('At least one title is required');
+            }
+            return Promise.resolve(false);
         }
     } else {
         // Concept or other node type with single-language title
         title = document.getElementById('edit-node-title').value;
         if (!title) {
-            alert('Title is required');
-            return;
+            if (!options.silent) {
+                alert('Title is required');
+            }
+            return Promise.resolve(false);
         }
         const descField = document.getElementById('edit-node-description');
         description = descField ? descField.value : '';
@@ -503,7 +533,7 @@ function updateNodeInfo() {
     const payload = { title: title, description: description };
     if (identifier) payload.identifier = identifier;
 
-    fetch(`/api/nodes/${window.selectedNodeId}`, {
+    return fetch(`/api/nodes/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -514,13 +544,18 @@ function updateNodeInfo() {
             showSuccessStatus('Node updated.');
             
             // Reload the graph to show updated information
-            loadGraphWithD3();
+            if (options.reloadGraph !== false) {
+                loadGraphWithD3();
+            }
+            return true;
         } else {
-            showActionError('Error updating node', getApiErrorMessage(data));
+            showActionErrorIfNeeded('Error updating node', getApiErrorMessage(data), options);
+            return false;
         }
     })
     .catch(error => {
-        showActionError('Error updating node', error);
+        showActionErrorIfNeeded('Error updating node', error, options);
+        return false;
     });
 }
 
@@ -615,10 +650,12 @@ function disconnectI14YConcept() {
 }
 
 // Apply SHACL constraints to selected node
-function applyConstraints() {
+function applyConstraints(options = {}) {
     if (!window.selectedNodeId) {
-        alert('No node selected');
-        return;
+        if (!options.silent) {
+            alert('No node selected');
+        }
+        return Promise.resolve(false);
     }
 
     // Collect constraint values
@@ -641,7 +678,7 @@ function applyConstraints() {
     if (range) constraints.range = range;
     if (datatype) constraints.datatype = datatype;
 
-    fetch(`/api/nodes/${window.selectedNodeId}`, {
+    return fetch(`/api/nodes/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(constraints)
@@ -652,21 +689,28 @@ function applyConstraints() {
             showSuccessStatus('Constraints applied.');
             
             // Reload the graph to show updated information
-            loadGraphWithD3();
+            if (options.reloadGraph !== false) {
+                loadGraphWithD3();
+            }
+            return true;
         } else {
-            showActionError('Error applying constraints', getApiErrorMessage(data));
+            showActionErrorIfNeeded('Error applying constraints', getApiErrorMessage(data), options);
+            return false;
         }
     })
     .catch(error => {
-        showActionError('Error applying constraints', error);
+        showActionErrorIfNeeded('Error applying constraints', error, options);
+        return false;
     });
 }
 
 // Apply order to data element
-function applyOrder() {
+function applyOrder(options = {}) {
     if (!window.selectedNodeId) {
-        alert('No node selected');
-        return;
+        if (!options.silent) {
+            alert('No node selected');
+        }
+        return Promise.resolve(false);
     }
 
     const orderValue = document.getElementById('element-order').value;
@@ -679,7 +723,7 @@ function applyOrder() {
     
     console.log('Sending order data:', orderData);
 
-    fetch(`/api/nodes/${window.selectedNodeId}`, {
+    return fetch(`/api/nodes/${window.selectedNodeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData)
@@ -691,17 +735,197 @@ function applyOrder() {
             showSuccessStatus('Order updated.');
             
             // Reload node details to reflect the change (keep selection)
-            loadNodeDetails(window.selectedNodeId);
+            if (options.reloadNodeDetails !== false) {
+                loadNodeDetails(window.selectedNodeId);
+            }
             // Also reload graph to update visualization
-            loadGraphWithD3();
+            if (options.reloadGraph !== false) {
+                loadGraphWithD3();
+            }
+            return true;
         } else {
-            showActionError('Error updating order', getApiErrorMessage(data));
+            showActionErrorIfNeeded('Error updating order', getApiErrorMessage(data), options);
+            return false;
         }
     })
     .catch(error => {
-        showActionError('Error updating order', error);
+        showActionErrorIfNeeded('Error updating order', error, options);
+        return false;
     });
 }
+
+const AUTO_SAVE_ACTIONS = {
+    DATASET: 'dataset',
+    DATA_ELEMENT_INFO: 'data_element_info',
+    NODE_INFO: 'node_info',
+    CONSTRAINTS: 'constraints',
+    ORDER: 'order'
+};
+
+const AUTO_SAVE_DEBOUNCE_MS = 350;
+const AUTO_SAVE_INFO_FIELD_IDS = new Set([
+    'edit-dataset-identifier',
+    'edit-dataset-title-de',
+    'edit-dataset-title-fr',
+    'edit-dataset-title-it',
+    'edit-dataset-title-en',
+    'edit-dataset-description-de',
+    'edit-dataset-description-fr',
+    'edit-dataset-description-it',
+    'edit-dataset-description-en',
+    'edit-data-element-identifier',
+    'edit-data-element-title-de',
+    'edit-data-element-title-fr',
+    'edit-data-element-title-it',
+    'edit-data-element-title-en',
+    'edit-data-element-description-de',
+    'edit-data-element-description-fr',
+    'edit-data-element-description-it',
+    'edit-data-element-description-en',
+    'edit-class-identifier',
+    'edit-class-title-de',
+    'edit-class-title-fr',
+    'edit-class-title-it',
+    'edit-class-title-en',
+    'edit-class-description-de',
+    'edit-class-description-fr',
+    'edit-class-description-it',
+    'edit-class-description-en',
+    'edit-node-title',
+    'edit-node-description'
+]);
+
+const AUTO_SAVE_CONSTRAINT_FIELD_IDS = new Set([
+    'min-length',
+    'max-length',
+    'pattern',
+    'in-values',
+    'node-reference',
+    'range'
+]);
+
+let autoSaveTimer = null;
+let autoSaveInFlight = false;
+let pendingAutoSaveActions = new Set();
+
+function getAutoSaveActionForElement(element) {
+    if (!element || !element.id) {
+        return null;
+    }
+
+    if (element.id === 'element-order') {
+        return AUTO_SAVE_ACTIONS.ORDER;
+    }
+
+    if (AUTO_SAVE_CONSTRAINT_FIELD_IDS.has(element.id)) {
+        return AUTO_SAVE_ACTIONS.CONSTRAINTS;
+    }
+
+    if (AUTO_SAVE_INFO_FIELD_IDS.has(element.id)) {
+        if (element.id.startsWith('edit-dataset-')) {
+            return AUTO_SAVE_ACTIONS.DATASET;
+        }
+        if (element.id.startsWith('edit-data-element-')) {
+            return AUTO_SAVE_ACTIONS.DATA_ELEMENT_INFO;
+        }
+        return AUTO_SAVE_ACTIONS.NODE_INFO;
+    }
+
+    return null;
+}
+
+function scheduleAutoSaveAction(action) {
+    if (!action) {
+        return;
+    }
+
+    pendingAutoSaveActions.add(action);
+
+    if (autoSaveTimer) {
+        clearTimeout(autoSaveTimer);
+    }
+
+    autoSaveTimer = setTimeout(flushAutoSaveActions, AUTO_SAVE_DEBOUNCE_MS);
+}
+
+async function flushAutoSaveActions() {
+    if (!window.selectedNodeId || pendingAutoSaveActions.size === 0) {
+        pendingAutoSaveActions.clear();
+        return;
+    }
+
+    if (autoSaveInFlight) {
+        return;
+    }
+
+    autoSaveInFlight = true;
+    autoSaveTimer = null;
+
+    const actionsToRun = new Set(pendingAutoSaveActions);
+    pendingAutoSaveActions.clear();
+
+    const actionOrder = [
+        AUTO_SAVE_ACTIONS.DATASET,
+        AUTO_SAVE_ACTIONS.DATA_ELEMENT_INFO,
+        AUTO_SAVE_ACTIONS.NODE_INFO,
+        AUTO_SAVE_ACTIONS.CONSTRAINTS,
+        AUTO_SAVE_ACTIONS.ORDER
+    ];
+
+    let hasSuccessfulUpdate = false;
+    const updateOptions = { silent: true, reloadGraph: false, reloadNodeDetails: false };
+
+    for (const action of actionOrder) {
+        if (!actionsToRun.has(action)) {
+            continue;
+        }
+
+        let result = false;
+        if (action === AUTO_SAVE_ACTIONS.DATASET) {
+            result = await updateDatasetInfo(updateOptions);
+        } else if (action === AUTO_SAVE_ACTIONS.DATA_ELEMENT_INFO) {
+            result = await updateDataElementInfo(updateOptions);
+        } else if (action === AUTO_SAVE_ACTIONS.NODE_INFO) {
+            result = await updateNodeInfo(updateOptions);
+        } else if (action === AUTO_SAVE_ACTIONS.CONSTRAINTS) {
+            result = await applyConstraints(updateOptions);
+        } else if (action === AUTO_SAVE_ACTIONS.ORDER) {
+            result = await applyOrder(updateOptions);
+        }
+
+        hasSuccessfulUpdate = hasSuccessfulUpdate || !!result;
+    }
+
+    if (hasSuccessfulUpdate) {
+        loadGraphWithD3();
+    }
+
+    autoSaveInFlight = false;
+
+    // Process fields edited while the previous save was running.
+    if (pendingAutoSaveActions.size > 0) {
+        scheduleAutoSaveAction(Array.from(pendingAutoSaveActions)[0]);
+    }
+}
+
+function setupAutoSaveOnBlur() {
+    if (window.__autoSaveOnBlurInitialized) {
+        return;
+    }
+
+    document.addEventListener('focusout', event => {
+        const action = getAutoSaveActionForElement(event.target);
+        if (!action) {
+            return;
+        }
+
+        scheduleAutoSaveAction(action);
+    }, true);
+
+    window.__autoSaveOnBlurInitialized = true;
+}
+
+setupAutoSaveOnBlur();
 
 // Convert class to dataset
 function confirmConvertToDataset() {
