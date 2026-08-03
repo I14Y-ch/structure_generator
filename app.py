@@ -4210,13 +4210,8 @@ def update_node(node_id):
     """Update a node"""
     editor = get_user_editor()
     node_data = request.json
-    print(f"UPDATE NODE {node_id}: Received data: {node_data}")
     result = editor.update_node(node_id, node_data)
-    print(f"UPDATE NODE {node_id}: Result: {result}")
     if result:
-        # Log the updated node's order field specifically
-        if node_id in editor.nodes:
-            print(f"UPDATE NODE {node_id}: Node order after update: {editor.nodes[node_id].order}")
         return jsonify(result)
     return jsonify({"error": "Node not found"}), 404
 
