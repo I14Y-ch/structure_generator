@@ -15,12 +15,40 @@ from typing import Optional
 SH = Namespace("http://www.w3.org/ns/shacl#")
 DCT = Namespace("http://purl.org/dc/terms/")
 
+
+class UnsafeXSDInputError(ValueError):
+    """Raised when an uploaded XSD uses unsafe XML features (e.g. DTD/XXE)."""
+
+
+def _secure_xml_parser():
+    """Return an lxml parser hardened against XXE and related XML attacks."""
+    return etree.XMLParser(
+        resolve_entities=False,
+        load_dtd=False,
+        no_network=True,
+        dtd_validation=False,
+        attribute_defaults=False,
+        recover=False,
+        huge_tree=False,
+    )
+
+
+def _reject_doctype(xsd_bytes):
+    """Refuse any XSD that declares a DTD (blocks XXE payloads)."""
+    if b"<!DOCTYPE" in xsd_bytes.upper():
+        raise UnsafeXSDInputError("DTD declarations are not allowed in XSD uploads")
+
+
 def parse_xsd_content(xsd_content):
     """Parse XSD content string and return the root element."""
     try:
-        parser = etree.XMLParser(resolve_entities=False)
-        root = etree.fromstring(xsd_content.encode('utf-8'), parser=parser)
+        xsd_bytes = xsd_content.encode('utf-8')
+        _reject_doctype(xsd_bytes)
+        root = etree.fromstring(xsd_bytes, parser=_secure_xml_parser())
         return root
+    except UnsafeXSDInputError:
+        # Propagate security errors so callers can surface a clear 4xx response.
+        raise
     except Exception as e:
         print(f"Error parsing XSD content: {e}")
         return None
@@ -523,6 +551,9 @@ def xsd_to_ttl(xsd_content: str, dataset_identifier: str = "dataset_identifier")
             ttl_content = ttl_content.decode('utf-8')
         
         return ttl_content
+    except UnsafeXSDInputError:
+        # Propagate security errors so callers can surface a clear 4xx response.
+        raise
     except Exception as e:
         print(f"Error converting XSD to TTL: {e}")
         import traceback

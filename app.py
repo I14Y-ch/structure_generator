@@ -6273,6 +6273,9 @@ def import_xsd():
             return jsonify({"success": True})
         else:
             return jsonify({"error": message}), 500
+    except ValueError as e:
+        # Includes UnsafeXSDInputError (DTD/XXE rejection): return 400 to the client.
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": "An internal error occurred."}), 500
 

@@ -27,10 +27,10 @@ def import_xsd_file(file_content: bytes, dataset_name: str, filename: str = "sch
             import sys
             from pathlib import Path
             sys.path.insert(0, str(Path(__file__).parent.parent))
-            from xsd_importer import xsd_to_ttl
+            from xsd_importer import xsd_to_ttl, UnsafeXSDInputError
         except ImportError:
             try:
-                from xsd_importer import xsd_to_ttl
+                from xsd_importer import xsd_to_ttl, UnsafeXSDInputError
             except ImportError:
                 return False, "Cannot import xsd_to_ttl function"
         
@@ -54,6 +54,9 @@ def import_xsd_file(file_content: bytes, dataset_name: str, filename: str = "sch
         
         return True, "XSD file converted to TTL successfully"
         
+    except UnsafeXSDInputError:
+        # Propagate so the Flask route can return HTTP 400.
+        raise
     except UnicodeDecodeError:
         return False, "Failed to decode XSD file - check encoding"
     except Exception as e:
