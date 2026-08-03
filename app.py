@@ -6127,8 +6127,6 @@ def import_geojson_structure(editor, geojson_payload: Dict[str, Any], dataset_na
 @app.route('/api/import/csv', methods=['POST'])
 def import_csv():
     """Import a CSV file and convert to SHACL TTL"""
-    with open('/tmp/csv_import.log', 'a') as f:
-        f.write("=== CSV IMPORT FUNCTION CALLED ===\n")
     editor = get_user_editor()
     try:
         if 'file' not in request.files:
@@ -6168,11 +6166,7 @@ def import_csv():
         
         # Process the TTL to extract data structure
         try:
-            with open('/tmp/csv_import.log', 'a') as f:
-                f.write("Starting TTL processing...\n")
             _process_csv_ttl_import(editor, ttl, file.filename, dataset_name)
-            with open('/tmp/csv_import.log', 'a') as f:
-                f.write("TTL processed successfully\n")
         except Exception as e:
             # Continue with basic import even if advanced processing fails
             pass
