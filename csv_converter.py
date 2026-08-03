@@ -80,15 +80,15 @@ class CSVToSHACL:
             for idx in range(length):
                 chars = {v[idx] for v in cleaned}
                 if all(ch.isdigit() for ch in chars):
-                    token = r"\d"
+                    token = r"\d"  # nosec B105
                 elif all(ch.isalpha() and ch.isupper() for ch in chars):
-                    token = r"[A-Z]"
+                    token = r"[A-Z]"  # nosec B105
                 elif all(ch.isalpha() and ch.islower() for ch in chars):
-                    token = r"[a-z]"
+                    token = r"[a-z]"  # nosec B105
                 elif all(ch.isalpha() for ch in chars):
-                    token = r"[A-Za-z]"
+                    token = r"[A-Za-z]"  # nosec B105
                 elif all(ch.isalnum() for ch in chars):
-                    token = r"[A-Za-z0-9]"
+                    token = r"[A-Za-z0-9]"  # nosec B105
                 elif len(chars) == 1:
                     token = re.escape(next(iter(chars)))
                 else:

@@ -2858,7 +2858,16 @@ def generate_full_ttl(nodes: Dict[str, SHACLNode], base_uri: str, edges: Dict[st
 #------------------------------------------------------------------------------
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+
+def _load_secret_key():
+    key = os.environ.get('SECRET_KEY', '')
+    if len(key) < 32:
+        raise RuntimeError('SECRET_KEY must be configured with at least 32 characters')
+    return key
+
+
+app.secret_key = _load_secret_key()
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_TYPE'] = 'filesystem'
 
@@ -6375,4 +6384,5 @@ if __name__ == '__main__':
     print(f"Access the application at: http://localhost:{port}")
     print("Press Ctrl+C to stop the server")
     
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    # Bind all interfaces: required in containerized deployments where the platform's ingress reaches the app via the container network.
+    app.run(host='0.0.0.0', port=port, debug=debug)  # nosec B104  # nosemgrep: python.flask.security.audit.app-run-param-config.avoid_app_run_with_bad_host
