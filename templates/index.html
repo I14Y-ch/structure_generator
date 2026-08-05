@@ -726,7 +726,7 @@
                 class="form-control"
                 id="data-element-identifier"
                 placeholder="e.g. my_field_name"
-                pattern="[a-zA-Z0-9_-]+"
+                pattern="[a-zA-Z0-9_\-]+"
                 title="Only letters, numbers, hyphens (-), and underscores (_) are allowed."
               />
               <div class="form-text">
@@ -1070,7 +1070,7 @@
                 class="form-control"
                 id="class-identifier"
                 placeholder="e.g. my_class_name"
-                pattern="[a-zA-Z0-9_-]+"
+                pattern="[a-zA-Z0-9_\-]+"
                 title="Only letters, numbers, hyphens (-), and underscores (_) are allowed."
               />
               <div class="form-text">
@@ -2349,7 +2349,7 @@
                                   node.identifier || ""
                                 )}" ${
                 isLinked ? "readonly" : ""
-              } placeholder="Dataset identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+              } placeholder="Dataset identifier" pattern="[a-zA-Z0-9_\-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
                                 ${
                                   isLinked
                                     ? ""
@@ -2491,7 +2491,7 @@
                                     <label for="edit-class-identifier" class="form-label small">Identifier:</label>
                                     <input type="text" class="form-control form-control-sm" id="edit-class-identifier" value="${escapeHtml(
                                       node.identifier || node.local_name || ""
-                                    )}" placeholder="e.g. my_class_name" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
+                                    )}" placeholder="e.g. my_class_name" pattern="[a-zA-Z0-9_\-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed.">
                                     <div class="form-text">Unique identifier (letters, numbers, hyphens, underscores only)</div>
                                 </div>
                                 <div class="mb-3 mt-3">
@@ -2747,7 +2747,7 @@
                                     node.local_name ||
                                     getMultilingualText(node.title) ||
                                     ""
-                                )}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
+                                )}" placeholder="Data element identifier" pattern="[a-zA-Z0-9_\-]+" title="Only letters, numbers, hyphens (-), and underscores (_) are allowed. No spaces.">
                                 <div class="form-text">Unique identifier for this data element (letters, numbers, hyphens, underscores only)</div>
                             </div>
                             <div class="mb-3 mt-3">

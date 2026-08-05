@@ -649,10 +649,9 @@ function dragStart(event, d) {
 }
 
 function dragMove(event, d) {
-    // Account for zoom scale
-    const transform = d3.zoomTransform(svg.node());
-    d.fx = (event.x / transform.k) - (transform.x / transform.k);
-    d.fy = (event.y / transform.k) - (transform.y / transform.k);
+    // D3 already expresses drag coordinates in the transformed graph's space.
+    d.fx = event.x;
+    d.fy = event.y;
 }
 
 function dragEnd(event, d) {
@@ -1251,3 +1250,18 @@ setTimeout(() => {
     }
 }, 100);
 
+// These shared helpers are used by fitToView(), outside renderVisualization().
+function getNodeTitleForFit(d) {
+    const title = d.identifier || d.local_name || d.title || '';
+    return typeof title === 'object'
+        ? title.de || title.en || title.fr || title.it || Object.values(title)[0] || ''
+        : title;
+}
+
+function getNodeWidth(d) {
+    return Math.max(90, getNodeTitleForFit(d).length * 9);
+}
+
+function getNodeHeight(d) {
+    return getNodeTitleForFit(d).length <= 50 ? 36 : 68;
+}
